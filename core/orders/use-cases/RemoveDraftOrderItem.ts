@@ -18,6 +18,9 @@ export class RemoveDraftOrderItem {
   async execute(input: RemoveDraftOrderItemInput): Promise<OrdersResult<DraftOrder>> {
     const current = await this.reader.execute(input);
     if (!current.ok) return current;
+    if (current.value.status === 'submitted') {
+      return ordersFailure('INVALID_STATUS_TRANSITION', 'A submitted draft order is immutable.');
+    }
 
     const productId = input.productId.trim();
     if (!productId) return ordersFailure('INVALID_INPUT', 'The product ID is required.');
@@ -38,6 +41,7 @@ export class RemoveDraftOrderItem {
     if (!updatedDraft) {
       return ordersFailure('PRICE_UNAVAILABLE', 'Draft order totals could not be recalculated.');
     }
+    updatedDraft = { ...updatedDraft, status: 'draft' };
 
     try {
       await this.repository.save(updatedDraft);

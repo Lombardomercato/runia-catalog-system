@@ -50,6 +50,19 @@ export type AccountFiltersResult = {
   error: string | null;
 };
 
+export type AccountLinkOption = {
+  id: string;
+  name: string;
+  legalName: string | null;
+  whatsapp: string | null;
+  email: string | null;
+};
+
+export type AccountLinkOptionsResult = {
+  accounts: AccountLinkOption[];
+  error: string | null;
+};
+
 export type AccountDetail = {
   id: string;
   name: string;
@@ -115,6 +128,11 @@ export type CreateAccountInput = {
   priceListId: string | null;
   discountPercent: number | string | null;
   isActive: boolean;
+};
+
+export type CreateAccountFromSalesOrderSnapshotInput = CreateAccountInput & {
+  sourceOrderId: string;
+  notes: string | null;
 };
 
 export type UpdateAccountInput = CreateAccountInput & {

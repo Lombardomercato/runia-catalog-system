@@ -61,6 +61,7 @@ export class CreateDraftOrder {
         currency,
         items: items.value,
         summary,
+        identity: null,
         createdAt: timestamp,
         updatedAt: timestamp,
       };

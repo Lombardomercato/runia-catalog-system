@@ -205,6 +205,11 @@ export function ordersFailure(
   };
 }
 
+export function isPositiveMoneyAmount(value: string) {
+  const amount = parseDecimal(value);
+  return amount !== null && amount.units > 0n;
+}
+
 function parseDecimal(value: string): Decimal | null {
   const normalized = value.trim();
   const match = /^(\d+)(?:\.(\d+))?$/.exec(normalized);

@@ -1,12 +1,15 @@
 import type {
   CreateSalesOrderInput,
+  CreateAccountFromSalesOrderInput,
   DuplicateSalesOrderInput,
   NormalizedSalesOrderInput,
   SalesCommandFieldErrors,
   SalesListParams,
   SalesOrderStatus,
   SalesOrderStatusFilter,
+  LinkSalesOrderAccountInput,
   UpdateSalesOrderInput,
+  UpdateSalesOrderStatusInput,
 } from './types';
 import { SALES_ORDER_STATUSES } from './types';
 
@@ -23,6 +26,29 @@ type SearchParamsInput = Record<string, string | string[] | undefined>;
 
 const statusValues = new Set<string>(SALES_ORDER_STATUSES);
 const statusFilterValues = new Set<SalesOrderStatusFilter>(['all', ...SALES_ORDER_STATUSES]);
+
+const nextStatus: Partial<Record<SalesOrderStatus, SalesOrderStatus>> = {
+  draft: 'pending',
+  pending: 'confirmed',
+  confirmed: 'preparing',
+  preparing: 'delivered',
+  delivered: 'closed',
+};
+
+export function getNextSalesOrderStatus(status: SalesOrderStatus) {
+  return nextStatus[status] ?? null;
+}
+
+export function canCancelSalesOrder(status: SalesOrderStatus) {
+  return status !== 'closed' && status !== 'cancelled';
+}
+
+export function isSalesOrderStatusTransitionAllowed(
+  current: SalesOrderStatus,
+  target: SalesOrderStatus,
+) {
+  return getNextSalesOrderStatus(current) === target || (target === 'cancelled' && canCancelSalesOrder(current));
+}
 
 export function parseSalesListSearchParams(searchParams: SearchParamsInput): SalesListParams {
   const search = readParam(searchParams, 'q').trim().slice(0, 120);
@@ -96,6 +122,66 @@ export function validateDuplicateSalesOrderInput(input: DuplicateSalesOrderInput
     value: { tenantSlug, orderId },
     fieldErrors,
   };
+}
+
+export function validateUpdateSalesOrderStatusInput(input: UpdateSalesOrderStatusInput): {
+  value: { tenantSlug: string; orderId: string; status: SalesOrderStatus } | null;
+  fieldErrors: SalesCommandFieldErrors;
+} {
+  const fieldErrors: SalesCommandFieldErrors = {};
+  const tenantSlug = normalizeRequiredText(input.tenantSlug);
+  const orderId = normalizeRequiredText(input.orderId);
+  const status = normalizeRequiredText(input.status) as SalesOrderStatus;
+  if (!tenantSlug) fieldErrors.tenantSlug = 'El tenant es obligatorio.';
+  if (!orderId) fieldErrors.orderId = 'No se pudo identificar el pedido.';
+  if (!statusValues.has(status)) fieldErrors.status = 'El estado solicitado no es valido.';
+  return hasFieldErrors(fieldErrors)
+    ? { value: null, fieldErrors }
+    : { value: { tenantSlug, orderId, status }, fieldErrors };
+}
+
+export function validateLinkSalesOrderAccountInput(input: LinkSalesOrderAccountInput): {
+  value: LinkSalesOrderAccountInput | null;
+  fieldErrors: SalesCommandFieldErrors;
+} {
+  const fieldErrors: SalesCommandFieldErrors = {};
+  const tenantSlug = normalizeRequiredText(input.tenantSlug);
+  const orderId = normalizeRequiredText(input.orderId);
+  const accountId = normalizeRequiredText(input.accountId);
+  if (!tenantSlug) fieldErrors.tenantSlug = 'El tenant es obligatorio.';
+  if (!orderId) fieldErrors.orderId = 'No se pudo identificar el pedido.';
+  if (!accountId) fieldErrors.accountId = 'Selecciona una Account.';
+  return hasFieldErrors(fieldErrors)
+    ? { value: null, fieldErrors }
+    : { value: { tenantSlug, orderId, accountId }, fieldErrors };
+}
+
+export function validateCreateAccountFromSalesOrderInput(input: CreateAccountFromSalesOrderInput): {
+  value: CreateAccountFromSalesOrderInput | null;
+  fieldErrors: SalesCommandFieldErrors;
+} {
+  const fieldErrors: SalesCommandFieldErrors = {};
+  const tenantSlug = normalizeRequiredText(input.tenantSlug);
+  const orderId = normalizeRequiredText(input.orderId);
+  const name = normalizeRequiredText(input.name);
+  if (!tenantSlug) fieldErrors.tenantSlug = 'El tenant es obligatorio.';
+  if (!orderId) fieldErrors.orderId = 'No se pudo identificar el pedido.';
+  if (!name) fieldErrors.name = 'El nombre es obligatorio.';
+  return hasFieldErrors(fieldErrors)
+    ? { value: null, fieldErrors }
+    : {
+        value: {
+          tenantSlug,
+          orderId,
+          name,
+          legalName: normalizeOptionalText(input.legalName),
+          whatsapp: normalizeOptionalText(input.whatsapp),
+          email: normalizeOptionalText(input.email),
+          taxId: normalizeOptionalText(input.taxId),
+          notes: normalizeOptionalText(input.notes),
+        },
+        fieldErrors,
+      };
 }
 
 function validateSalesOrderFields(input: CreateSalesOrderInput): {

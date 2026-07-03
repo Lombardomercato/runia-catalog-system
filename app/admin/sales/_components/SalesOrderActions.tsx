@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { writeClipboard } from '@/lib/writeClipboard';
 import type { SalesOrderDetail } from '@/modules/sales/types';
 import {
   buildWhatsAppUrl,
@@ -14,7 +15,7 @@ type SalesOrderActionsProps = {
 
 export function SalesOrderActions({ order, hasUnsavedChanges }: SalesOrderActionsProps) {
   const [feedback, setFeedback] = useState<string | null>(null);
-  const isSavedOrder = Boolean(order?.id && order.accountId && order.items.length > 0);
+  const isSavedOrder = Boolean(order?.id && order.items.length > 0);
   const message = useMemo(
     () => (order && isSavedOrder ? formatSalesOrderWhatsAppMessage(order) : null),
     [isSavedOrder, order],
@@ -60,7 +61,7 @@ export function SalesOrderActions({ order, hasUnsavedChanges }: SalesOrderAction
         onClick={openWhatsApp}
         type="button"
       >
-        Enviar por WhatsApp
+        Abrir WhatsApp
       </button>
       <button
         className="products-muted-button sales-copy-button"
@@ -81,27 +82,6 @@ export function SalesOrderActions({ order, hasUnsavedChanges }: SalesOrderAction
   );
 }
 
-async function writeClipboard(message: string) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(message);
-    return;
-  }
-
-  const textarea = document.createElement('textarea');
-  textarea.value = message;
-  textarea.setAttribute('readonly', '');
-  textarea.style.position = 'fixed';
-  textarea.style.opacity = '0';
-  document.body.appendChild(textarea);
-  textarea.select();
-  const copied = document.execCommand('copy');
-  textarea.remove();
-
-  if (!copied) {
-    throw new Error('Clipboard no disponible.');
-  }
-}
-
 function getActionNotice(
   order: SalesOrderDetail | null,
   hasUnsavedChanges: boolean,
@@ -120,11 +100,11 @@ function getActionNotice(
   }
 
   if (!order.accountWhatsapp) {
-    return 'La Account no tiene un WhatsApp cargado. Puedes copiar el mensaje.';
+    return 'El cliente no tiene un WhatsApp cargado. Puedes copiar el mensaje.';
   }
 
   if (!whatsappUrl) {
-    return 'El WhatsApp de la Account no tiene un formato valido.';
+    return 'El WhatsApp del cliente no tiene un formato valido.';
   }
 
   return null;

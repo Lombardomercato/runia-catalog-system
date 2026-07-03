@@ -13,6 +13,7 @@ import type {
   AccountCommandFieldErrors,
   AccountCommandResult,
   CreateAccountInput,
+  CreateAccountFromSalesOrderSnapshotInput,
   NormalizedAccountInput,
   UpdateAccountInput,
   UpdateAccountPriceListInput,
@@ -59,6 +60,56 @@ export async function createAccount(input: CreateAccountInput): Promise<AccountC
   revalidateAccountPaths(data.id);
 
   return commandSuccess('Account creada.', 1, data.updated_at, data.id);
+}
+
+export async function createAccountFromSalesOrderSnapshot(
+  input: CreateAccountFromSalesOrderSnapshotInput,
+): Promise<AccountCommandResult> {
+  const validation = validateCreateAccountInput(input);
+  if (!validation.value) {
+    return commandError('Hay campos que necesitan revision.', validation.fieldErrors);
+  }
+  const sourceOrderId = input.sourceOrderId.trim();
+  if (!sourceOrderId) return commandError('No se pudo identificar el pedido de origen.');
+  const tenantResult = await getTenant(validation.value.tenantSlug);
+  if (!tenantResult.tenant) return commandError(tenantResult.error);
+  const preflight = await validateAccountPreflight(tenantResult.tenant.id, validation.value);
+  if (preflight.error || Object.keys(preflight.fieldErrors).length > 0) {
+    return commandError(preflight.error ?? 'Hay campos que necesitan revision.', preflight.fieldErrors);
+  }
+
+  const { data, error } = await supabaseServer
+    .from('customer_accounts')
+    .insert({
+      tenant_id: tenantResult.tenant.id,
+      ...toAccountWritePayload(validation.value),
+      commercial_terms: normalizeOptionalText(input.notes),
+      metadata_json: {
+        source: 'sales_order',
+        source_order_id: sourceOrderId,
+      },
+    })
+    .select('id, updated_at')
+    .single();
+  if (error || !data) return commandError(error?.message ?? 'No se pudo crear la Account.');
+  revalidateAccountPaths(data.id);
+  return commandSuccess('Account creada desde pedido.', 1, data.updated_at, data.id);
+}
+
+export async function rollbackAccountCreatedFromSalesOrder(input: {
+  tenantSlug: string;
+  accountId: string;
+  sourceOrderId: string;
+}) {
+  const tenantResult = await getTenant(input.tenantSlug.trim());
+  if (!tenantResult.tenant) return false;
+  const { error } = await supabaseServer
+    .from('customer_accounts')
+    .delete()
+    .eq('tenant_id', tenantResult.tenant.id)
+    .eq('id', input.accountId)
+    .contains('metadata_json', { source: 'sales_order', source_order_id: input.sourceOrderId });
+  return !error;
 }
 
 export async function updateAccount(input: UpdateAccountInput): Promise<AccountCommandResult> {
@@ -310,6 +361,12 @@ function commandError(
     error: error ?? 'No se pudo completar la operacion.',
     fieldErrors,
   };
+}
+
+function normalizeOptionalText(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized || null;
 }
 
 function revalidateAccountPaths(accountId?: string) {

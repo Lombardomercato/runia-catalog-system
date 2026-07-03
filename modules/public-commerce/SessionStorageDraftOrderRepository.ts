@@ -25,7 +25,7 @@ export class SessionStorageDraftOrderRepository implements DraftOrderRepository 
     if (!raw) return null;
     try {
       const parsed: unknown = JSON.parse(raw);
-      return isDraftOrder(parsed) ? parsed : null;
+      return isDraftOrder(parsed) ? { ...parsed, identity: parsed.identity ?? null } : null;
     } catch {
       return null;
     }
@@ -73,17 +73,34 @@ function isDraftOrder(value: unknown): value is DraftOrder {
     !isString(value.id) ||
     !isString(value.tenantId) ||
     !isString(value.sessionId) ||
-    value.status !== 'draft' ||
+    (
+      value.status !== 'draft' &&
+      value.status !== 'ready_to_submit' &&
+      value.status !== 'submitted'
+    ) ||
     !isString(value.currency) ||
     !isString(value.createdAt) ||
     !isString(value.updatedAt) ||
     !Array.isArray(value.items) ||
     !value.items.every(isDraftOrderItem) ||
-    !isSummary(value.summary)
+    !isSummary(value.summary) ||
+    (value.identity !== undefined && value.identity !== null && !isIdentity(value.identity))
   ) {
     return false;
   }
   return true;
+}
+
+function isIdentity(value: unknown) {
+  if (!isRecord(value)) return false;
+  return (
+    isString(value.name) &&
+    isNullableString(value.company) &&
+    isString(value.whatsapp) &&
+    isNullableString(value.email) &&
+    isNullableString(value.cuit) &&
+    isNullableString(value.notes)
+  );
 }
 
 function isDraftOrderItem(value: unknown) {

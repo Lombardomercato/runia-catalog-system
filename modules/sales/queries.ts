@@ -11,6 +11,7 @@ import type {
   SalesDraftOptionsResult,
   SalesListParams,
   SalesOrderDetailResult,
+  SalesOrderAuditRow,
   SalesOrderListResult,
   SalesOrderQueryRow,
   SalesPaginationState,
@@ -28,9 +29,13 @@ const SALES_ORDER_SELECT = `
   total,
   notes,
   metadata_json,
+  source,
+  currency,
+  identity_snapshot_json,
+  commercial_snapshot_json,
   created_at,
   updated_at,
-  customer_accounts:account_id(id, name, whatsapp_phone),
+  customer_accounts:account_id(id, name, legal_name, email, tax_id, whatsapp_phone),
   price_lists:price_list_id(id, name),
   sales_order_items(
     id,
@@ -40,7 +45,9 @@ const SALES_ORDER_SELECT = `
     variant_snapshot,
     unit_price_snapshot,
     quantity,
-    subtotal
+    subtotal,
+    currency_snapshot,
+    product_snapshot_json
   )
 `;
 
@@ -147,11 +154,20 @@ export async function getSalesOrderById(
     };
   }
 
+  const { data: auditData } = await supabaseServer
+    .from('audit_logs')
+    .select('id, action, before_json, after_json, created_at')
+    .eq('tenant_id', tenantResult.tenant.id)
+    .eq('entity_type', 'sales_order')
+    .eq('entity_id', orderId)
+    .order('created_at', { ascending: true });
+
   return {
     order: mapSalesOrderRowToDetail(
       data as SalesOrderQueryRow,
       tenantResult.tenant.name,
       tenantResult.tenant.currency,
+      (auditData ?? []) as SalesOrderAuditRow[],
     ),
     error: null,
   };

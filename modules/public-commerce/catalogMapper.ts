@@ -23,8 +23,16 @@ export function mapCatalogTenantToPublicCommerceTenant(
   return {
     id: tenant.id,
     slug: tenant.slug,
+    commercialName: tenant.commercialName,
     currency: tenant.currency,
     locale: tenant.locale,
     enabled: tenant.features.orders,
+    priceList: tenant.priceList
+      ? {
+          id: tenant.priceList.id,
+          code: tenant.priceList.code,
+          name: tenant.priceList.name,
+        }
+      : null,
   };
 }

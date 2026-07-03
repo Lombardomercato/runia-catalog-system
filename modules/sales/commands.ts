@@ -3,14 +3,23 @@
 import { revalidatePath } from 'next/cache';
 import { writeAuditLog } from '@/lib/audit';
 import { supabaseServer } from '@/lib/supabaseServer';
+import {
+  createAccountFromSalesOrderSnapshot,
+  rollbackAccountCreatedFromSalesOrder,
+} from '@/modules/accounts/commands';
 import { getTenantIdentity } from '@/modules/tenant/queries';
 import {
   validateCreateSalesOrderInput,
+  validateCreateAccountFromSalesOrderInput,
   validateDuplicateSalesOrderInput,
+  validateUpdateSalesOrderStatusInput,
+  validateLinkSalesOrderAccountInput,
   validateUpdateSalesOrderInput,
+  isSalesOrderStatusTransitionAllowed,
 } from './validators';
 import type {
   CreateSalesOrderInput,
+  CreateAccountFromSalesOrderInput,
   DuplicateSalesOrderInput,
   NormalizedSalesOrderInput,
   NormalizedSalesOrderItemInput,
@@ -19,6 +28,9 @@ import type {
   SalesOrderItemQueryRow,
   SalesProductQueryRow,
   UpdateSalesOrderInput,
+  UpdateSalesOrderStatusInput,
+  SalesOrderStatus,
+  LinkSalesOrderAccountInput,
 } from './types';
 
 type TenantRecord = {
@@ -40,7 +52,7 @@ type PriceListRecord = {
 
 type ExistingSalesOrderRecord = {
   id: string;
-  account_id: string;
+  account_id: string | null;
   status: string;
   price_list_id: string;
   subtotal: number | string | null;
@@ -48,7 +60,20 @@ type ExistingSalesOrderRecord = {
   total: number | string | null;
   notes: string | null;
   metadata_json: Record<string, unknown> | null;
+  source: string;
+  currency: string;
+  identity_snapshot_json: Record<string, unknown> | null;
+  commercial_snapshot_json: Record<string, unknown> | null;
   sales_order_items: SalesOrderItemQueryRow[] | null;
+};
+
+type SalesOrderAccountContextRecord = {
+  id: string;
+  account_id: string | null;
+  price_list_id: string;
+  notes: string | null;
+  identity_snapshot_json: Record<string, unknown> | null;
+  metadata_json: Record<string, unknown> | null;
 };
 
 type ResolvedSalesOrderItem = {
@@ -247,55 +272,30 @@ export async function duplicateSalesOrder(
     source.order.metadata_json,
   );
 
-  if (sourceItems.length === 0 || sourceItems.some((item) => !item.product_id)) {
-    return commandError(
-      sourceItems.length === 0
-        ? 'El pedido no tiene items para duplicar.'
-        : 'El pedido contiene productos eliminados y no puede duplicarse de forma segura.',
-    );
-  }
-
-  const draftValidation = validateCreateSalesOrderInput({
-    tenantSlug: duplicateValidation.value.tenantSlug,
-    accountId: source.order.account_id,
-    status: 'draft',
-    notes: source.order.notes,
-    items: sourceItems.map((item) => ({
-      itemId: null,
-      productId: item.product_id ?? '',
-      quantity: toNumber(item.quantity),
-    })),
-  });
-
-  if (!draftValidation.value) {
-    return commandError('El pedido fuente contiene datos que necesitan revision.', draftValidation.fieldErrors);
-  }
-
-  const resolved = await resolveSalesOrder(
-    tenantResult.tenant.id,
-    draftValidation.value,
-    [],
-    source.order.price_list_id,
-  );
-
-  if (!resolved.order) {
-    return commandError(resolved.error, resolved.fieldErrors);
-  }
+  const snapshot = validateDuplicableOrder(source.order, sourceItems);
+  if (!snapshot.ok) return commandError(snapshot.error);
 
   const { data, error } = await supabaseServer
     .from('sales_orders')
     .insert({
       tenant_id: tenantResult.tenant.id,
-      account_id: resolved.order.account.id,
+      account_id: source.order.account_id,
       status: 'draft',
-      price_list_id: resolved.order.priceList.id,
-      subtotal: resolved.order.subtotal,
-      discount: resolved.order.discount,
-      total: resolved.order.total,
-      notes: draftValidation.value.notes,
-      metadata_json: buildOrderMetadata(null, resolved.order, {
+      price_list_id: source.order.price_list_id,
+      subtotal: snapshot.subtotal,
+      discount: snapshot.discount,
+      total: snapshot.total,
+      notes: source.order.notes,
+      source: 'admin',
+      currency: snapshot.currency,
+      identity_snapshot_json: snapshot.identity,
+      commercial_snapshot_json: snapshot.commercial,
+      metadata_json: {
+        ...(source.order.metadata_json ?? {}),
         duplicated_from_order_id: source.order.id,
-      }),
+        duplicated_from_source: source.order.source,
+        item_order_skus: sourceItems.map((item) => item.sku_snapshot),
+      },
     })
     .select('id, updated_at')
     .single();
@@ -304,10 +304,11 @@ export async function duplicateSalesOrder(
     return commandError(error?.message ?? 'No se pudo duplicar el pedido.');
   }
 
-  const itemsWrite = await writeSalesOrderItems(
+  const itemsWrite = await writeDuplicatedSalesOrderItems(
     tenantResult.tenant.id,
     data.id,
-    resolved.order.items,
+    sourceItems,
+    snapshot.currency,
   );
 
   if (!itemsWrite.ok) {
@@ -321,7 +322,19 @@ export async function duplicateSalesOrder(
     entityId: data.id,
     action: 'sales_order.duplicated',
     before: null,
-    after: buildAuditSnapshot(draftValidation.value, resolved.order),
+    after: {
+      accountId: source.order.account_id,
+      status: 'draft',
+      priceListId: source.order.price_list_id,
+      source: 'admin',
+      duplicatedFromSource: source.order.source,
+      subtotal: snapshot.subtotal,
+      discount: snapshot.discount,
+      total: snapshot.total,
+      currency: snapshot.currency,
+      identity: snapshot.identity,
+      items: sourceItems.map(toItemAuditSnapshot),
+    },
     metadata: {
       sourceOrderId: source.order.id,
     },
@@ -330,6 +343,170 @@ export async function duplicateSalesOrder(
   revalidateSalesPaths(data.id);
 
   return commandSuccess('Pedido duplicado como Draft.', 1, data.updated_at, data.id);
+}
+
+export async function updateSalesOrderStatus(
+  input: UpdateSalesOrderStatusInput,
+): Promise<SalesCommandResult> {
+  const validation = validateUpdateSalesOrderStatusInput(input);
+  if (!validation.value) {
+    return commandError('No se pudo validar el cambio de estado.', validation.fieldErrors);
+  }
+  const tenantResult = await getTenant(validation.value.tenantSlug);
+  if (!tenantResult.tenant) return commandError(tenantResult.error);
+
+  const { data: existing, error: existingError } = await supabaseServer
+    .from('sales_orders')
+    .select('id, status, updated_at')
+    .eq('tenant_id', tenantResult.tenant.id)
+    .eq('id', validation.value.orderId)
+    .single();
+  if (existingError || !existing) return commandError('No se encontro el pedido solicitado.');
+
+  const currentStatus = existing.status as SalesOrderStatus;
+  if (!isSalesOrderStatusTransitionAllowed(currentStatus, validation.value.status)) {
+    return commandError(statusTransitionError(currentStatus, validation.value.status));
+  }
+
+  const { data: updated, error: updateError } = await supabaseServer
+    .from('sales_orders')
+    .update({ status: validation.value.status })
+    .eq('tenant_id', tenantResult.tenant.id)
+    .eq('id', validation.value.orderId)
+    .eq('status', currentStatus)
+    .select('updated_at')
+    .maybeSingle();
+  if (updateError) return commandError(updateError.message);
+  if (!updated) return commandError('El pedido cambio mientras se procesaba la accion. Actualiza la vista.');
+
+  const audit = await writeAuditLog({
+    tenantId: tenantResult.tenant.id,
+    entityType: 'sales_order',
+    entityId: validation.value.orderId,
+    action: 'sales_order.status_updated',
+    before: { status: currentStatus, updatedAt: existing.updated_at },
+    after: { status: validation.value.status, updatedAt: updated.updated_at },
+    metadata: { transition: `${currentStatus}->${validation.value.status}` },
+  });
+  if (audit.error) return commandError(`El estado se actualizo, pero fallo la auditoria: ${audit.error}`);
+
+  revalidateSalesPaths(validation.value.orderId);
+  return commandSuccess('Estado del pedido actualizado.', 1, updated.updated_at, validation.value.orderId);
+}
+
+export async function linkSalesOrderAccount(
+  input: LinkSalesOrderAccountInput,
+): Promise<SalesCommandResult> {
+  const validation = validateLinkSalesOrderAccountInput(input);
+  if (!validation.value) {
+    return commandError('No se pudo validar la vinculacion.', validation.fieldErrors);
+  }
+  const tenantResult = await getTenant(validation.value.tenantSlug);
+  if (!tenantResult.tenant) return commandError(tenantResult.error);
+  const context = await getSalesOrderAccountContext(
+    tenantResult.tenant.id,
+    validation.value.orderId,
+  );
+  if (!context.order) return commandError(context.error);
+  if (context.order.account_id) return commandError('El pedido ya tiene una Account vinculada.');
+  if (!resolvePublicIdentity(context.order)) {
+    return commandError('El pedido no contiene una identidad publica valida.');
+  }
+  const account = await getSalesAccount(tenantResult.tenant.id, validation.value.accountId);
+  if (!account.record) return commandError(account.error, { accountId: account.error ?? undefined });
+
+  const linked = await attachSalesOrderAccount({
+    tenantId: tenantResult.tenant.id,
+    order: context.order,
+    accountId: account.record.id,
+    mode: 'existing',
+  });
+  if (!linked.linked || linked.error) return commandError(linked.error);
+  revalidateSalesPaths(context.order.id);
+  return {
+    ...commandSuccess('Account vinculada al pedido.', 1, linked.updatedAt, context.order.id),
+    accountId: account.record.id,
+  };
+}
+
+export async function createAccountFromSalesOrder(
+  input: CreateAccountFromSalesOrderInput,
+): Promise<SalesCommandResult> {
+  const validation = validateCreateAccountFromSalesOrderInput(input);
+  if (!validation.value) {
+    return commandError('No se pudo validar la Account.', validation.fieldErrors);
+  }
+  const tenantResult = await getTenant(validation.value.tenantSlug);
+  if (!tenantResult.tenant) return commandError(tenantResult.error);
+  const context = await getSalesOrderAccountContext(
+    tenantResult.tenant.id,
+    validation.value.orderId,
+  );
+  if (!context.order) return commandError(context.error);
+  if (context.order.account_id) return commandError('El pedido ya tiene una Account vinculada.');
+  if (!resolvePublicIdentity(context.order)) {
+    return commandError('El pedido no contiene una identidad publica valida.');
+  }
+
+  const created = await createAccountFromSalesOrderSnapshot({
+    tenantSlug: validation.value.tenantSlug,
+    sourceOrderId: context.order.id,
+    name: validation.value.name,
+    legalName: validation.value.legalName,
+    taxId: validation.value.taxId,
+    whatsapp: validation.value.whatsapp,
+    email: validation.value.email,
+    address: null,
+    priceListId: context.order.price_list_id,
+    discountPercent: 0,
+    isActive: true,
+    notes: validation.value.notes,
+  });
+  if (!created.ok || !created.accountId) {
+    return commandError(created.error, created.fieldErrors as SalesCommandFieldErrors);
+  }
+
+  const linked = await attachSalesOrderAccount({
+    tenantId: tenantResult.tenant.id,
+    order: context.order,
+    accountId: created.accountId,
+    mode: 'created',
+  });
+  if (!linked.linked) {
+    await rollbackAccountCreatedFromSalesOrder({
+      tenantSlug: validation.value.tenantSlug,
+      accountId: created.accountId,
+      sourceOrderId: context.order.id,
+    });
+    return commandError(linked.error ?? 'No se pudo vincular la Account creada.');
+  }
+  if (linked.error) return commandError(linked.error);
+
+  const accountAudit = await writeAuditLog({
+    tenantId: tenantResult.tenant.id,
+    entityType: 'customer_account',
+    entityId: created.accountId,
+    action: 'account.created_from_sales_order',
+    after: {
+      accountId: created.accountId,
+      name: validation.value.name,
+      legalName: validation.value.legalName,
+      whatsapp: validation.value.whatsapp,
+      email: validation.value.email,
+      taxId: validation.value.taxId,
+      notes: validation.value.notes,
+      priceListId: context.order.price_list_id,
+    },
+    metadata: { sourceOrderId: context.order.id },
+  });
+  if (accountAudit.error) {
+    return commandError(`La Account se vinculo, pero fallo la auditoria: ${accountAudit.error}`);
+  }
+  revalidateSalesPaths(context.order.id);
+  return {
+    ...commandSuccess('Account creada y vinculada.', 1, linked.updatedAt, context.order.id),
+    accountId: created.accountId,
+  };
 }
 
 async function resolveSalesOrder(
@@ -507,6 +684,111 @@ async function writeSalesOrderItems(
   return commandSuccess('Items guardados.', items.length, undefined, orderId);
 }
 
+async function writeDuplicatedSalesOrderItems(
+  tenantId: string,
+  orderId: string,
+  items: SalesOrderItemQueryRow[],
+  currency: string,
+): Promise<SalesCommandResult> {
+  const { error } = await supabaseServer.from('sales_order_items').insert(
+    items.map((item) => ({
+      tenant_id: tenantId,
+      order_id: orderId,
+      product_id: item.product_id,
+      sku_snapshot: item.sku_snapshot,
+      product_name_snapshot: item.product_name_snapshot,
+      variant_snapshot: item.variant_snapshot,
+      unit_price_snapshot: toNumber(item.unit_price_snapshot),
+      quantity: toNumber(item.quantity),
+      subtotal: toNumber(item.subtotal),
+      currency_snapshot: normalizeCurrency(item.currency_snapshot) ?? currency,
+      product_snapshot_json: item.product_snapshot_json ?? {},
+    })),
+  );
+
+  if (error) return commandError(error.message);
+  return commandSuccess('Items duplicados.', items.length, undefined, orderId);
+}
+
+function validateDuplicableOrder(
+  order: ExistingSalesOrderRecord,
+  items: SalesOrderItemQueryRow[],
+):
+  | {
+      ok: true;
+      subtotal: number;
+      discount: number;
+      total: number;
+      currency: string;
+      identity: Record<string, unknown>;
+      commercial: Record<string, unknown>;
+    }
+  | { ok: false; error: string } {
+  if (items.length === 0) return { ok: false, error: 'El pedido no tiene items para duplicar.' };
+
+  const currency = normalizeCurrency(order.currency);
+  const subtotal = toNumber(order.subtotal);
+  const discount = toNumber(order.discount);
+  const total = toNumber(order.total);
+  if (!currency || subtotal === null || discount === null || total === null) {
+    return { ok: false, error: 'El pedido fuente no tiene moneda o totales validos.' };
+  }
+  if (subtotal < 0 || discount < 0 || total < 0 || !sameMoney(total, subtotal - discount)) {
+    return { ok: false, error: 'Los totales del pedido fuente son inconsistentes.' };
+  }
+
+  let itemsSubtotal = 0;
+  for (const item of items) {
+    const quantity = toNumber(item.quantity);
+    const unitPrice = toNumber(item.unit_price_snapshot);
+    const itemSubtotal = toNumber(item.subtotal);
+    const itemCurrency: string = normalizeCurrency(item.currency_snapshot) ?? currency;
+    if (
+      !item.sku_snapshot?.trim() ||
+      !item.product_name_snapshot?.trim() ||
+      quantity === null ||
+      quantity <= 0 ||
+      unitPrice === null ||
+      unitPrice < 0 ||
+      itemSubtotal === null ||
+      itemSubtotal < 0 ||
+      itemCurrency !== currency ||
+      !sameMoney(itemSubtotal, unitPrice * quantity)
+    ) {
+      return { ok: false, error: 'El pedido fuente contiene un item snapshot invalido.' };
+    }
+    itemsSubtotal += itemSubtotal;
+  }
+  if (!sameMoney(itemsSubtotal, subtotal)) {
+    return { ok: false, error: 'Los items no coinciden con el subtotal del pedido fuente.' };
+  }
+
+  const identity = snapshotObject(order.identity_snapshot_json)
+    ?? snapshotObject(order.metadata_json?.identity_snapshot)
+    ?? {};
+  if (!order.account_id && (!snapshotText(identity, 'name') || !snapshotText(identity, 'whatsapp'))) {
+    return { ok: false, error: 'El pedido sin Account no tiene una identidad publica valida.' };
+  }
+  const commercial = snapshotObject(order.commercial_snapshot_json)
+    ?? snapshotObject(order.metadata_json?.commercial_snapshot)
+    ?? {};
+
+  return { ok: true, subtotal, discount, total, currency, identity, commercial };
+}
+
+function toItemAuditSnapshot(item: SalesOrderItemQueryRow) {
+  return {
+    productId: item.product_id,
+    sku: item.sku_snapshot,
+    name: item.product_name_snapshot,
+    variant: item.variant_snapshot,
+    unitPrice: toNumber(item.unit_price_snapshot),
+    quantity: toNumber(item.quantity),
+    subtotal: toNumber(item.subtotal),
+    currency: item.currency_snapshot,
+  };
+}
+
 async function getTenant(tenantSlug: string): Promise<{
   tenant: TenantRecord | null;
   error: string | null;
@@ -623,6 +905,10 @@ async function getExistingSalesOrder(
         total,
         notes,
         metadata_json,
+        source,
+        currency,
+        identity_snapshot_json,
+        commercial_snapshot_json,
         sales_order_items(
           id,
           product_id,
@@ -631,7 +917,9 @@ async function getExistingSalesOrder(
           variant_snapshot,
           unit_price_snapshot,
           quantity,
-          subtotal
+          subtotal,
+          currency_snapshot,
+          product_snapshot_json
         )
       `,
     )
@@ -649,6 +937,69 @@ async function getExistingSalesOrder(
   return {
     order: data as ExistingSalesOrderRecord,
     error: null,
+  };
+}
+
+async function getSalesOrderAccountContext(
+  tenantId: string,
+  orderId: string,
+): Promise<{ order: SalesOrderAccountContextRecord | null; error: string | null }> {
+  const { data, error } = await supabaseServer
+    .from('sales_orders')
+    .select('id, account_id, price_list_id, notes, identity_snapshot_json, metadata_json')
+    .eq('tenant_id', tenantId)
+    .eq('id', orderId)
+    .single();
+  if (error || !data) return { order: null, error: 'No se encontro el pedido solicitado.' };
+  return { order: data as SalesOrderAccountContextRecord, error: null };
+}
+
+function resolvePublicIdentity(order: SalesOrderAccountContextRecord) {
+  const identity = snapshotObject(order.identity_snapshot_json)
+    ?? snapshotObject(order.metadata_json?.identity_snapshot);
+  return identity && snapshotText(identity, 'name') ? identity : null;
+}
+
+async function attachSalesOrderAccount(input: {
+  tenantId: string;
+  order: SalesOrderAccountContextRecord;
+  accountId: string;
+  mode: 'created' | 'existing';
+}) {
+  const { data, error } = await supabaseServer
+    .from('sales_orders')
+    .update({ account_id: input.accountId })
+    .eq('tenant_id', input.tenantId)
+    .eq('id', input.order.id)
+    .is('account_id', null)
+    .select('updated_at')
+    .maybeSingle();
+  if (error) return { linked: false, updatedAt: undefined, error: error.message };
+  if (!data) {
+    return {
+      linked: false,
+      updatedAt: undefined,
+      error: 'El pedido fue vinculado por otro operador. Actualiza la vista.',
+    };
+  }
+  const audit = await writeAuditLog({
+    tenantId: input.tenantId,
+    entityType: 'sales_order',
+    entityId: input.order.id,
+    action: 'sales_order.account_linked',
+    before: {
+      accountId: null,
+      identitySnapshot: resolvePublicIdentity(input.order),
+    },
+    after: { accountId: input.accountId },
+    metadata: { mode: input.mode },
+  });
+  return {
+    linked: true,
+    updatedAt: data.updated_at,
+    error: audit.error
+      ? `La Account se vinculo, pero fallo la auditoria: ${audit.error}`
+      : null,
   };
 }
 
@@ -753,6 +1104,35 @@ function sortItemsByStoredOrder(
       (rankBySku.get(left.sku_snapshot) ?? Number.MAX_SAFE_INTEGER) -
       (rankBySku.get(right.sku_snapshot) ?? Number.MAX_SAFE_INTEGER),
   );
+}
+
+function snapshotObject(value: unknown) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function snapshotText(snapshot: Record<string, unknown>, field: string) {
+  const value = snapshot[field];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function normalizeCurrency(value: string | null | undefined) {
+  const currency = value?.trim().toUpperCase() ?? '';
+  return /^[A-Z]{3}$/.test(currency) ? currency : null;
+}
+
+function sameMoney(left: number, right: number) {
+  return Math.abs(left - right) < 0.005;
+}
+
+function statusTransitionError(current: SalesOrderStatus, target: SalesOrderStatus) {
+  if (current === 'closed') return 'Un pedido cerrado no puede cambiar de estado ni cancelarse.';
+  if (current === 'cancelled') return 'Un pedido cancelado no puede cambiar de estado.';
+  if (target === 'delivered') return 'El pedido solo puede marcarse entregado desde En preparacion.';
+  if (target === 'closed') return 'El pedido solo puede cerrarse desde Entregado.';
+  if (current === 'pending' && target === 'draft') return 'No se permite volver un pedido pendiente a borrador.';
+  return `La transicion ${current} -> ${target} no esta permitida.`;
 }
 
 function commandSuccess(

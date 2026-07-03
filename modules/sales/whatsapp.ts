@@ -1,4 +1,5 @@
 import type { SalesOrderDetail, SalesOrderStatus } from './types';
+import { buildSalesOrderWhatsAppUrl } from '@/core/orders/whatsapp';
 
 const statusLabels: Record<SalesOrderStatus, string> = {
   draft: 'Borrador',
@@ -48,13 +49,7 @@ export function formatSalesOrderWhatsAppMessage(order: SalesOrderDetail) {
 }
 
 export function buildWhatsAppUrl(phone: string, message: string) {
-  const normalizedPhone = phone.replace(/\D/g, '');
-
-  if (normalizedPhone.length < 7 || normalizedPhone.length > 15 || !message.trim()) {
-    return null;
-  }
-
-  return `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`;
+  return buildSalesOrderWhatsAppUrl(phone, message);
 }
 
 function createMoneyFormatter(currency: string) {

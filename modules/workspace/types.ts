@@ -2,28 +2,38 @@ export type WorkspaceTenant = {
   id: string;
   slug: string;
   name: string;
+  currency: string;
 };
 
-export type WorkspaceCountKey =
-  | 'products'
-  | 'accounts'
-  | 'sales'
-  | 'categories'
-  | 'brands';
-
-export type WorkspacePendingKey =
-  | 'salesDraft'
+export type WorkspaceMetricKey =
   | 'salesPending'
-  | 'productsWithoutPrice'
-  | 'accountsWithoutPriceList';
+  | 'salesConfirmed'
+  | 'salesPreparing'
+  | 'totalSales'
+  | 'averageTicket'
+  | 'ordersToday'
+  | 'ordersLast7Days'
+  | 'pendingConfirmation'
+  | 'pendingPreparing'
+  | 'deliveredNotClosed';
 
 export type WorkspaceMetric = {
-  key: WorkspaceCountKey | WorkspacePendingKey;
+  key: WorkspaceMetricKey;
   label: string;
   value: number | null;
   description: string;
   href: string;
   error: string | null;
+  format: 'count' | 'currency';
+};
+
+export type WorkspaceRecentOrder = {
+  id: string;
+  customerName: string;
+  total: number;
+  currency: string;
+  status: string;
+  createdAt: string;
 };
 
 export type WorkspaceActivity = {
@@ -48,6 +58,8 @@ export type CommercialWorkspace = {
   tenant: WorkspaceTenant | null;
   summary: WorkspaceMetric[];
   pending: WorkspaceMetric[];
+  recentOrders: WorkspaceRecentOrder[];
+  recentOrdersError: string | null;
   activity: WorkspaceActivity[];
   activityError: string | null;
   sidebarIndicators: WorkspaceSidebarIndicators;
@@ -66,5 +78,21 @@ export type AuditLogRow = {
   entity_id: string | null;
   action: string;
   metadata_json: Record<string, unknown> | null;
+  before_json: Record<string, unknown> | null;
+  after_json: Record<string, unknown> | null;
   created_at: string;
+};
+
+export type WorkspaceSalesRow = {
+  id: string;
+  status: string;
+  total: number | string | null;
+  currency: string | null;
+  created_at: string;
+};
+
+export type WorkspaceRecentOrderRow = WorkspaceSalesRow & {
+  account_id: string | null;
+  identity_snapshot_json: Record<string, unknown> | null;
+  customer_accounts: { name: string | null } | Array<{ name: string | null }> | null;
 };

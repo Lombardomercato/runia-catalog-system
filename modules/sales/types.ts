@@ -10,6 +10,24 @@ export const SALES_ORDER_STATUSES = [
 
 export type SalesOrderStatus = (typeof SALES_ORDER_STATUSES)[number];
 
+export type SalesOrderSource = 'admin' | 'public_commerce';
+
+export type SalesOrderTimelineEntry = {
+  key: 'created' | SalesOrderStatus;
+  label: string;
+  occurredAt: string | null;
+  state: 'complete' | 'current' | 'pending' | 'cancelled';
+  inferred: boolean;
+};
+
+export type SalesOrderAuditRow = {
+  id: string;
+  action: string;
+  before_json: Record<string, unknown> | null;
+  after_json: Record<string, unknown> | null;
+  created_at: string;
+};
+
 export type SalesOrderStatusFilter = 'all' | SalesOrderStatus;
 
 export type SalesListParams = {
@@ -30,7 +48,7 @@ export type SalesPaginationState = {
 
 export type SalesOrderListItem = {
   id: string;
-  accountId: string;
+  accountId: string | null;
   accountName: string;
   status: SalesOrderStatus;
   priceListId: string;
@@ -39,6 +57,10 @@ export type SalesOrderListItem = {
   discount: number;
   total: number;
   itemsCount: number;
+  firstProductName: string | null;
+  firstProductVariant: string | null;
+  source: SalesOrderSource;
+  currency: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -107,9 +129,14 @@ export type SalesOrderDetail = {
   id: string;
   tenantName: string;
   currency: string;
-  accountId: string;
+  accountId: string | null;
+  hasPublicIdentity: boolean;
   accountName: string;
   accountWhatsapp: string | null;
+  customerCompany: string | null;
+  customerEmail: string | null;
+  customerTaxId: string | null;
+  source: SalesOrderSource;
   status: SalesOrderStatus;
   priceListId: string;
   priceListName: string;
@@ -120,6 +147,7 @@ export type SalesOrderDetail = {
   createdAt: string;
   updatedAt: string;
   items: SalesOrderItemDetail[];
+  timeline: SalesOrderTimelineEntry[];
 };
 
 export type SalesOrderDetailResult = {
@@ -136,6 +164,11 @@ export type SalesCommandFieldErrors = Partial<
     | 'status'
     | 'notes'
     | 'items'
+    | 'name'
+    | 'legalName'
+    | 'taxId'
+    | 'whatsapp'
+    | 'email'
     | `item.${number}.productId`
     | `item.${number}.quantity`
     | `item.${number}.price`,
@@ -150,6 +183,7 @@ export type SalesCommandResult = {
   error: string | null;
   fieldErrors: SalesCommandFieldErrors;
   orderId?: string;
+  accountId?: string;
   updatedAt?: string;
 };
 
@@ -179,6 +213,29 @@ export type DuplicateSalesOrderInput = {
   orderId: string;
 };
 
+export type UpdateSalesOrderStatusInput = {
+  tenantSlug: string;
+  orderId: string;
+  status: SalesOrderStatus | string;
+};
+
+export type LinkSalesOrderAccountInput = {
+  tenantSlug: string;
+  orderId: string;
+  accountId: string;
+};
+
+export type CreateAccountFromSalesOrderInput = {
+  tenantSlug: string;
+  orderId: string;
+  name: string;
+  legalName: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  taxId: string | null;
+  notes: string | null;
+};
+
 export type NormalizedSalesOrderItemInput = {
   itemId: string | null;
   productId: string;
@@ -199,7 +256,7 @@ export type SalesRelation<T> = T | T[] | null;
 
 export type SalesOrderQueryRow = {
   id: string;
-  account_id: string;
+  account_id: string | null;
   status: string;
   price_list_id: string;
   subtotal: number | string | null;
@@ -207,11 +264,18 @@ export type SalesOrderQueryRow = {
   total: number | string | null;
   notes?: string | null;
   metadata_json: Record<string, unknown> | null;
+  source: string | null;
+  currency: string | null;
+  identity_snapshot_json: Record<string, unknown> | null;
+  commercial_snapshot_json: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
   customer_accounts: SalesRelation<{
     id: string;
     name: string | null;
+    legal_name: string | null;
+    email: string | null;
+    tax_id: string | null;
     whatsapp_phone: string | null;
   }>;
   price_lists: SalesRelation<{
@@ -230,6 +294,8 @@ export type SalesOrderItemQueryRow = {
   unit_price_snapshot: number | string | null;
   quantity: number | string | null;
   subtotal: number | string | null;
+  currency_snapshot: string | null;
+  product_snapshot_json: Record<string, unknown> | null;
 };
 
 export type SalesProductQueryRow = {

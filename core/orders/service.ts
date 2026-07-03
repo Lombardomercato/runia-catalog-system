@@ -1,17 +1,26 @@
 import type { TenantExecutionContext } from '../tenant/interfaces';
 import type { OrdersResult } from './errors';
 import type {
+  BuildSalesOrderWhatsAppMessageInput,
   CreateDraftOrderInput,
+  ConfirmDraftOrderInput,
+  ConfirmedDraftOrder,
+  CreateSalesOrderFromDraftInput,
+  CreateSalesOrderFromDraftOutput,
   CreateOrderInput,
   DraftOrder,
+  DraftOrderIdentity,
+  DraftOrderIdentityInput,
   DraftOrderResolution,
   GetDraftOrderInput,
   Order,
   OrderListQuery,
   OrderPage,
   OrderStatus,
+  PrepareDraftCheckoutInput,
   RemoveDraftOrderItemInput,
   ResolveDraftOrderInput,
+  SalesOrderWhatsAppMessage,
   UpdateDraftOrderInput,
   UpdateOrderInput,
 } from './interfaces';
@@ -22,6 +31,15 @@ export interface OrdersService {
   updateDraft(input: UpdateDraftOrderInput): Promise<OrdersResult<DraftOrder>>;
   removeDraftItem(input: RemoveDraftOrderItemInput): Promise<OrdersResult<DraftOrder>>;
   resolveDraft(input: ResolveDraftOrderInput): Promise<OrdersResult<DraftOrderResolution>>;
+  validateDraftIdentity(input: DraftOrderIdentityInput): OrdersResult<DraftOrderIdentity>;
+  prepareDraftCheckout(input: PrepareDraftCheckoutInput): Promise<OrdersResult<DraftOrder>>;
+  confirmDraft(input: ConfirmDraftOrderInput): Promise<OrdersResult<ConfirmedDraftOrder>>;
+  createSalesOrderFromDraft(
+    input: CreateSalesOrderFromDraftInput,
+  ): Promise<OrdersResult<CreateSalesOrderFromDraftOutput>>;
+  buildSalesOrderWhatsAppMessage(
+    input: BuildSalesOrderWhatsAppMessageInput,
+  ): OrdersResult<SalesOrderWhatsAppMessage>;
   create(
     context: TenantExecutionContext,
     input: CreateOrderInput,

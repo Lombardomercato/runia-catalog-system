@@ -11,10 +11,14 @@ export function PublicCommerceTenantSync({ tenant }: { tenant: PublicCommerceTen
     void configureTenant(tenant);
   }, [
     configureTenant,
+    tenant.commercialName,
     tenant.currency,
     tenant.enabled,
     tenant.id,
     tenant.locale,
+    tenant.priceList?.code,
+    tenant.priceList?.id,
+    tenant.priceList?.name,
     tenant.slug,
   ]);
 

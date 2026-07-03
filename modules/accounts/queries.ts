@@ -6,6 +6,7 @@ import type {
   AccountFiltersResult,
   AccountListParams,
   AccountListResult,
+  AccountLinkOptionsResult,
   AccountPaginationState,
   AccountPriceListOption,
   AccountQueryRow,
@@ -136,6 +137,33 @@ export async function getAccountFilterOptions(tenantSlug: string): Promise<Accou
   return {
     priceLists: priceLists.priceLists,
     error: priceLists.error,
+  };
+}
+
+export async function getLinkableAccountOptions(
+  tenantSlug: string,
+): Promise<AccountLinkOptionsResult> {
+  const tenantResult = await getTenantIdentity(tenantSlug);
+  if (tenantResult.error || !tenantResult.tenant) {
+    return { accounts: [], error: tenantResult.error };
+  }
+  const { data, error } = await supabaseServer
+    .from('customer_accounts')
+    .select('id, name, legal_name, whatsapp_phone, phone, email')
+    .eq('tenant_id', tenantResult.tenant.id)
+    .eq('status', 'active')
+    .order('name', { ascending: true })
+    .limit(200);
+  if (error) return { accounts: [], error: error.message };
+  return {
+    accounts: (data ?? []).map((account) => ({
+      id: account.id,
+      name: account.name,
+      legalName: account.legal_name,
+      whatsapp: account.whatsapp_phone ?? account.phone,
+      email: account.email,
+    })),
+    error: null,
   };
 }
 

@@ -27,6 +27,9 @@ export class UpdateDraftOrder {
   async execute(input: UpdateDraftOrderInput): Promise<OrdersResult<DraftOrder>> {
     const current = await this.reader.execute(input);
     if (!current.ok) return current;
+    if (current.value.status === 'submitted') {
+      return ordersFailure('INVALID_STATUS_TRANSITION', 'A submitted draft order is immutable.');
+    }
 
     const changes = consolidateDraftOrderItems(input.items, true);
     if (!changes.ok) return changes;
@@ -87,6 +90,7 @@ export class UpdateDraftOrder {
     if (!updatedDraft) {
       return ordersFailure('PRICE_UNAVAILABLE', 'Draft order totals could not be recalculated.');
     }
+    updatedDraft = { ...updatedDraft, status: 'draft' };
 
     try {
       await this.repository.save(updatedDraft);

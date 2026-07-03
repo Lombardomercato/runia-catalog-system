@@ -195,11 +195,11 @@ export function SalesClient({ result, params, tenantSlug }: SalesClientProps) {
         <section className="sales-list" aria-label="Listado de pedidos">
           <div className="sales-list-head" aria-hidden="true">
             <span>Pedido</span>
-            <span>Account</span>
-            <span>Lista</span>
-            <span>Items</span>
+            <span>Cliente</span>
+            <span>Contenido</span>
             <span>Total</span>
             <span>Estado</span>
+            <span>Origen</span>
             <span>Acciones</span>
           </div>
 
@@ -209,28 +209,35 @@ export function SalesClient({ result, params, tenantSlug }: SalesClientProps) {
                 <span>{shortId(order.id)}</span>
                 <h2>
                   <Link className="product-row-title-link" href={`/admin/sales/${order.id}`}>
-                    Pedido comercial
+                    Ver detalle
                   </Link>
                 </h2>
                 <p>{formatDateTime(order.updatedAt)}</p>
               </div>
 
               <div className="account-row-muted">
-                <span>Account</span>
+                <span>{order.accountId ? 'Account' : 'Identidad publica'}</span>
                 <strong>{order.accountName}</strong>
               </div>
 
-              <div className="account-row-muted">
-                <span>Lista</span>
-                <strong>{order.priceListName}</strong>
+              <div className="sales-row-content">
+                <strong>
+                  {[order.firstProductName, order.firstProductVariant].filter(Boolean).join(' - ')}
+                </strong>
+                <span>
+                  {order.itemsCount} {order.itemsCount === 1 ? 'item' : 'items'}
+                  {order.itemsCount > 1 ? ` · +${order.itemsCount - 1} mas` : ''}
+                </span>
               </div>
 
-              <div className="sales-row-items">{order.itemsCount}</div>
-
-              <div className="sales-row-total">{formatMoney(order.total)}</div>
+              <div className="sales-row-total">{formatMoney(order.total, order.currency)}</div>
 
               <div className="sales-status" data-status={order.status}>
                 {statusLabels[order.status]}
+              </div>
+
+              <div className="sales-row-source" data-source={order.source}>
+                {order.source === 'public_commerce' ? 'Public Commerce' : 'Admin'}
               </div>
 
               <button
@@ -275,10 +282,10 @@ function shortId(id: string) {
   return `#${id.slice(0, 8).toUpperCase()}`;
 }
 
-function formatMoney(value: number) {
+function formatMoney(value: number, currency = 'ARS') {
   return new Intl.NumberFormat('es-AR', {
     style: 'currency',
-    currency: 'ARS',
+    currency,
     maximumFractionDigits: 0,
   }).format(value);
 }

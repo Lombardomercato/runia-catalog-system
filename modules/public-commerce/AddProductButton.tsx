@@ -10,18 +10,18 @@ export function AddProductButton({
   product: PublicCommerceProduct;
   className?: string;
 }) {
-  const { addProduct, pending, tenant } = usePublicCommerce();
+  const { addProduct, draft, pending, tenant } = usePublicCommerce();
   if (!tenant?.enabled) return null;
   const unavailable = product.price === null;
 
   return (
     <button
       className={className}
-      disabled={pending || unavailable}
+      disabled={pending || unavailable || draft?.status === 'submitted'}
       onClick={() => void addProduct(product)}
       type="button"
     >
-      Agregar al pedido
+      {draft?.status === 'submitted' ? 'Pedido finalizado' : 'Agregar al pedido'}
     </button>
   );
 }

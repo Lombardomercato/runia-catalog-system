@@ -69,7 +69,7 @@ export interface OrderPage {
   totalPages: number;
 }
 
-export type DraftOrderStatus = 'draft';
+export type DraftOrderStatus = 'draft' | 'ready_to_submit' | 'submitted';
 
 export interface DraftOrderProductSnapshot {
   productId: string;
@@ -99,6 +99,15 @@ export interface DraftOrderSummary {
   total: Money;
 }
 
+export interface DraftOrderIdentity {
+  name: string;
+  company: string | null;
+  whatsapp: string;
+  email: string | null;
+  cuit: string | null;
+  notes: string | null;
+}
+
 export interface DraftOrder {
   id: string;
   tenantId: string;
@@ -107,6 +116,7 @@ export interface DraftOrder {
   currency: string;
   items: DraftOrderItem[];
   summary: DraftOrderSummary;
+  identity: DraftOrderIdentity | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -142,6 +152,35 @@ export interface RemoveDraftOrderItemInput extends GetDraftOrderInput {
   productId: string;
 }
 
+export interface DraftOrderIdentityInput {
+  name: string;
+  company?: string | null;
+  whatsapp: string;
+  email?: string | null;
+  cuit?: string | null;
+  notes?: string | null;
+}
+
+export interface PrepareDraftCheckoutInput extends GetDraftOrderInput {
+  identity: DraftOrderIdentityInput;
+}
+
+export type ConfirmDraftOrderInput = GetDraftOrderInput;
+
+export interface SalesOrderCommercialSnapshot {
+  tenantName: string;
+  priceListId: string;
+  priceListCode: string;
+  priceListName: string;
+  currency: string;
+  channel: 'public_commerce';
+}
+
+export interface CreateSalesOrderFromDraftInput extends GetDraftOrderInput {
+  idempotencyKey: string;
+  commercial: SalesOrderCommercialSnapshot;
+}
+
 export type ResolveDraftOrderInput = GetDraftOrderInput;
 
 export interface DraftOrderResolution {
@@ -155,6 +194,77 @@ export interface DraftOrderResolution {
   currency: string;
   status: DraftOrderStatus;
   updatedAt: string;
+}
+
+export interface ConfirmedDraftOrder {
+  draftOrder: DraftOrder;
+  summary: DraftOrderResolution;
+  identity: DraftOrderIdentity;
+  status: 'ready_to_submit';
+}
+
+export interface SalesOrderItemSnapshot {
+  productId: string;
+  sku: string;
+  name: string;
+  variant: string | null;
+  line: string | null;
+  brandName: string | null;
+  categoryName: string | null;
+  unitPrice: Money;
+  quantity: number;
+  subtotal: Money;
+}
+
+export interface SalesOrderFromDraft {
+  id: string;
+  tenantId: string;
+  sourceDraftId: string;
+  idempotencyKey: string;
+  status: 'pending';
+  identity: DraftOrderIdentity;
+  commercial: SalesOrderCommercialSnapshot;
+  items: SalesOrderItemSnapshot[];
+  subtotal: Money;
+  discount: Money;
+  total: Money;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BuildSalesOrderWhatsAppMessageInput {
+  order: SalesOrderFromDraft;
+  locale?: string;
+}
+
+export interface SalesOrderWhatsAppMessage {
+  orderId: string;
+  shortOrderId: string;
+  message: string;
+}
+
+export interface PersistSalesOrderFromDraftInput {
+  tenantId: string;
+  sourceDraftId: string;
+  idempotencyKey: string;
+  identity: DraftOrderIdentity;
+  commercial: SalesOrderCommercialSnapshot;
+  items: SalesOrderItemSnapshot[];
+  subtotal: Money;
+  discount: Money;
+  total: Money;
+  notes: string | null;
+  draftSnapshot: DraftOrder;
+}
+
+export interface PersistSalesOrderFromDraftResult {
+  order: SalesOrderFromDraft;
+  created: boolean;
+}
+
+export interface CreateSalesOrderFromDraftOutput extends PersistSalesOrderFromDraftResult {
+  draftOrder: DraftOrder;
 }
 
 export interface ResolvedDraftOrderProduct {
@@ -186,4 +296,27 @@ export interface DraftOrderRuntime {
 
 export interface DraftOrderReader {
   execute(input: GetDraftOrderInput): Promise<OrdersResult<DraftOrder>>;
+}
+
+export interface DraftOrderConfirmer {
+  execute(input: ConfirmDraftOrderInput): Promise<OrdersResult<ConfirmedDraftOrder>>;
+}
+
+export interface DraftOrderResolver {
+  execute(input: ResolveDraftOrderInput): Promise<OrdersResult<DraftOrderResolution>>;
+}
+
+export interface DraftOrderIdentityValidator {
+  execute(input: DraftOrderIdentityInput): OrdersResult<DraftOrderIdentity>;
+}
+
+export interface SalesOrderFromDraftRepository {
+  findByDraft(input: {
+    tenantId: string;
+    sourceDraftId: string;
+    idempotencyKey: string;
+  }): Promise<SalesOrderFromDraft | null>;
+  createTransactional(
+    input: PersistSalesOrderFromDraftInput,
+  ): Promise<PersistSalesOrderFromDraftResult>;
 }
