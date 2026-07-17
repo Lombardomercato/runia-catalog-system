@@ -24,7 +24,7 @@ export async function getImportContext(tenantSlug: string): Promise<{
   };
   const [categories, brands, products, prices, priceLists] = await Promise.all([
     readExternalIds('categories', tenant.id),
-    readExternalIds('brands', tenant.id),
+    readBrands(tenant.id),
     readProducts(tenant.id),
     readPrices(tenant.id),
     readPriceLists(tenant.id),
@@ -37,6 +37,7 @@ export async function getImportContext(tenantSlug: string): Promise<{
     existing: {
       categoriesByExternalId: categories.values,
       brandsByExternalId: brands.values,
+      controlledBrandId: brands.controlledBrandId,
       productsBySku: products.values,
       pricesByProductAndList: prices.values,
       priceListsByCode: priceLists.values,
@@ -64,7 +65,25 @@ export async function listRecentImports(tenantSlug: string, limit = 10): Promise
   };
 }
 
-async function readExternalIds(table: 'categories' | 'brands', tenantId: string) {
+async function readBrands(tenantId: string) {
+  const { data, error } = await supabaseServer
+    .from('brands')
+    .select('id, external_id, is_controlled_placeholder')
+    .eq('tenant_id', tenantId);
+  const rows = data ?? [];
+  const controlledBrand = rows.find((row) => row.is_controlled_placeholder === true);
+  return {
+    values: new Map(
+      rows
+        .filter((row) => row.external_id)
+        .map((row) => [String(row.external_id), String(row.id)]),
+    ),
+    controlledBrandId: controlledBrand?.id ? String(controlledBrand.id) : null,
+    error: error ? `No se pudo leer brands: ${error.message}` : null,
+  };
+}
+
+async function readExternalIds(table: 'categories', tenantId: string) {
   const { data, error } = await supabaseServer.from(table).select('id, external_id').eq('tenant_id', tenantId);
   return {
     values: new Map((data ?? []).filter((row) => row.external_id).map((row) => [String(row.external_id), String(row.id)])),

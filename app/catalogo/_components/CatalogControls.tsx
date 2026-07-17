@@ -2,17 +2,18 @@
 
 import { useCallback, useEffect, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import type { CatalogFilterOption, CatalogListParams, CatalogSort } from '@/modules/catalog/types';
+import type { CommerceBrand, CommerceCategory, CommerceProductSort } from '@/sdk/server/types';
+import type { CatalogListParams } from '../catalogSearchParams';
 
 type CatalogControlsProps = {
   params: CatalogListParams;
-  categories: CatalogFilterOption[];
-  brands: CatalogFilterOption[];
+  categories: CommerceCategory[];
+  brands: CommerceBrand[];
   filteredCount: number;
   totalCount: number;
 };
 
-const sortOptions: Array<{ value: CatalogSort; label: string }> = [
+const sortOptions: Array<{ value: CommerceProductSort; label: string }> = [
   { value: 'name_asc', label: 'Nombre A-Z' },
   { value: 'name_desc', label: 'Nombre Z-A' },
   { value: 'price_asc', label: 'Menor precio' },
@@ -66,6 +67,6 @@ export function CatalogControls({ params, categories, brands, filteredCount, tot
   );
 }
 
-function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: CatalogFilterOption[]; onChange: (value: string) => void }) {
+function FilterSelect({ label, value, options, onChange }: { label: string; value: string; options: Array<CommerceCategory | CommerceBrand>; onChange: (value: string) => void }) {
   return <label className="catalog-select"><span>{label}</span><select onChange={(event) => onChange(event.target.value)} value={value}><option value="all">Todas</option>{options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select></label>;
 }

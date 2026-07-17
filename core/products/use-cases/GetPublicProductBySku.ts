@@ -13,6 +13,7 @@ import {
   projectPublicProduct,
   resolvePublicCatalogContext,
   toPublicPricingTenant,
+  toResolvedPublicPriceLists,
 } from '../publicCatalogPolicy';
 
 export class GetPublicProductBySku {
@@ -38,26 +39,26 @@ export class GetPublicProductBySku {
 
     let snapshot;
     try {
-      snapshot = await this.repository.loadProductBySkuSnapshot(tenantResult.value.id, sku);
+      snapshot = await this.repository.loadProductBySkuSnapshot(
+        tenantResult.value.id,
+        sku,
+        tenantResult.value.priceList.id,
+      );
     } catch {
       return productsFailure('REPOSITORY_FAILURE', 'The public product could not be loaded.');
     }
 
     const { product, category, brand } = snapshot;
-    if (
-      !product ||
-      !product.active ||
-      !category ||
-      !category.active ||
-      !brand ||
-      !brand.active
-    ) {
+    if (!product) {
       return productsFailure('PRODUCT_NOT_FOUND', 'The public product was not found.');
+    }
+    if (!product.active || !category?.active || !brand?.active) {
+      return productsFailure('PRODUCT_NOT_VISIBLE', 'The product is not publicly visible.');
     }
 
     const resolvedPrice = this.pricing.execute({
       tenant: toPublicPricingTenant(tenantResult.value),
-      priceLists: snapshot.priceLists,
+      priceLists: toResolvedPublicPriceLists(tenantResult.value),
       productId: product.id,
       prices: product.prices,
     });

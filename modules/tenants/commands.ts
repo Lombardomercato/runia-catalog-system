@@ -96,6 +96,7 @@ async function insertTenant(input: NormalizedCreateTenantInput): Promise<{
       currency: 'ARS',
       minimum_order_amount: 0,
       minimum_purchase_amount: 0,
+      feature_show_prices: true,
       feature_public_catalog: true,
       feature_orders: true,
       feature_wholesale_login: false,

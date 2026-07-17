@@ -32,6 +32,7 @@ export interface TenantBranding {
 }
 
 export interface TenantFeatureFlags {
+  showPrices: boolean;
   publicCatalog: boolean;
   orders: boolean;
   accountLogin: boolean;

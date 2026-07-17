@@ -46,13 +46,17 @@ RB Distribuidora acepto la propuesta comercial de Runia System y pago seña. Est
 - [db/migrations/004_accounts.sql](./db/migrations/004_accounts.sql): accounts comerciales, condiciones basicas y estructura futura de contactos/direcciones.
 - [db/migrations/005_sales.sql](./db/migrations/005_sales.sql): Sales Engine con pedidos comerciales e items con snapshot.
 - [db/migrations/006_pricing_engine.sql](./db/migrations/006_pricing_engine.sql): costos, reglas por lista y precios calculados con margen.
+- [db/migrations/009_runia_setup_engine_v0.sql](./db/migrations/009_runia_setup_engine_v0.sql): Setup Engine, RPC transaccional, estado setup y default único por tenant.
 - [db/seed/001_rb_seed.sql](./db/seed/001_rb_seed.sql): seed inicial de RB Distribuidora.
 - [docs/AUDIT_LOGS.md](./docs/AUDIT_LOGS.md): estrategia de auditoria futura.
 - [scripts/imports/import-rb-catalog.ts](./scripts/imports/import-rb-catalog.ts): importador del catalogo piloto de RB a Supabase.
 - [modules/imports](./modules/imports): motor compartido de lectura, validacion, preview e importacion para CLI y panel web.
 - [modules/catalog](./modules/catalog): lecturas publicas, filtros, lista de precios, detalle y consulta por WhatsApp.
 - [docs/IMPORT_REPORT_EXAMPLE.md](./docs/IMPORT_REPORT_EXAMPLE.md): estructura del reporte JSON del importador.
-- [docs/RUNIA_COMMERCE_SDK_SPEC.md](./docs/RUNIA_COMMERCE_SDK_SPEC.md): especificacion estrategica y tecnica del futuro Runia Commerce SDK.
+- [docs/RUNIA_COMMERCE_SDK_SPEC.md](./docs/RUNIA_COMMERCE_SDK_SPEC.md): especificacion estrategica y tecnica de Runia Commerce SDK.
+- [docs/RUNIA_COMMERCE_SDK_V1.md](./docs/RUNIA_COMMERCE_SDK_V1.md): API implementada del SDK interno server-only, ejemplos, errores y guia de integracion.
+- [docs/RUNIA_COMMERCE_PERFORMANCE.md](./docs/RUNIA_COMMERCE_PERFORMANCE.md): contrato y linea base de rendimiento de Runia Commerce.
+- [docs/RUNIA_SETUP_ENGINE_V0.md](./docs/RUNIA_SETUP_ENGINE_V0.md): alcance, arquitectura, seguridad, despliegue y QA del alta interna transaccional.
 - [docs/RUNIA_DOMAIN_ARCHITECTURE.md](./docs/RUNIA_DOMAIN_ARCHITECTURE.md): arquitectura oficial del Domain Layer y sus limites con Repository, API, SDK y Runia Web.
 
 ## Estructura propuesta
@@ -73,6 +77,17 @@ runia-catalog-system/
   lib/
     supabaseClient.ts
     catalog.ts
+  sdk/
+    server/
+      createCommerceClient.ts
+      products.ts
+      categories.ts
+      brands.ts
+      pricing.ts
+      tenant.ts
+      types.ts
+      errors.ts
+      index.ts
   modules/
     tenants/
       queries.ts
@@ -92,6 +107,7 @@ runia-catalog-system/
       004_accounts.sql
       005_sales.sql
       006_pricing_engine.sql
+      009_runia_setup_engine_v0.sql
     seed/
       001_rb_seed.sql
   scripts/
@@ -216,31 +232,88 @@ Criterio esperado para el piloto: `29` productos y `29` precios cargados para RB
 
 ## Desarrollo local
 
-Variables publicas requeridas para la app:
+Variables requeridas para la app:
 
 ```text
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 NEXT_PUBLIC_TENANT_SLUG=rb-distribuidora
 ADMIN_PASSWORD=change-this-admin-password
+RUNIA_INTERNAL_PASSWORD=change-this-separate-setup-password
+SUPABASE_SERVICE_ROLE_KEY=server-only-service-role
 ```
 
-`NEXT_PUBLIC_TENANT_SLUG` define que tenant opera la app actual. No debe haber dependencias hardcodeadas al cliente piloto dentro del codigo.
+Sólo las variables con prefijo `NEXT_PUBLIC` llegan al navegador. `ADMIN_PASSWORD`, `RUNIA_INTERNAL_PASSWORD` y `SUPABASE_SERVICE_ROLE_KEY` son server-only. `NEXT_PUBLIC_TENANT_SLUG` define qué tenant opera la app actual.
 
 Comandos:
 
 ```bash
 npm install
 npm run dev
+npm run test:sdk
+npm run test:setup
+npm run test:contracts
 ```
+
+## Runia Commerce SDK interno v1.1
+
+Las webs nuevas deben consumir Commerce exclusivamente desde el SDK server-only:
+
+```ts
+import { createCommerceClient } from '@/sdk/server';
+
+export async function loadPage() {
+  const commerce = createCommerceClient({
+    tenantSlug: 'rb-distribuidora',
+  });
+
+  const [tenant, featured] = await Promise.all([
+    commerce.tenant.getPublicConfig(),
+    commerce.products.featured({ limit: 6 }),
+  ]);
+
+  return { tenant, featured };
+}
+```
+
+Crear el cliente por request o render. La instancia memoiza sólo la resolución del tenant durante su propia vida; productos y precios no se cachean indefinidamente.
+
+API v1.1:
+
+- `commerce.tenant.getPublicConfig()`;
+- `commerce.tenant.buildWhatsAppUrl({ message })`;
+- `commerce.products.featured({ limit, category, brand })`;
+- `commerce.products.list()`;
+- `commerce.products.getBySku()`;
+- `commerce.categories.list()`;
+- `commerce.brands.list()`;
+- `commerce.pricing.resolve()`;
+- `commerce.errors.isNotFound(error)` y `commerce.errors.hasCode(error, code)`.
+
+`featured()` aplica aislamiento por tenant, visibilidad, precio público, límite seguro y orden estable. El helper de WhatsApp normaliza el número público y devuelve un estado controlado cuando no está configurado. Los errores públicos usan códigos estables sin filtrar errores de Supabase.
+
+El SDK no incluye React, hooks, JSX, CSS ni componentes. No debe importarse desde Client Components y no expone Supabase, adapters, `tenant_id`, `price_lists` o secrets. Ver [documentación v1.1](./docs/RUNIA_COMMERCE_SDK_V1.md) y [QA de la segunda implementación](./docs/SDK_SECOND_IMPLEMENTATION_QA.md).
+
+`tenant.getPublicConfig()` incluye `features.showPrices`, configurado por Setup Engine. Es una preferencia pública de presentación; Commerce sigue resolviendo el precio autoritativo.
+
+## Runia Setup Engine v0
+
+`/runia/setup` es la herramienta interna para crear un motor Commerce sin ejecutar SQL por tenant. Configura identidad, contacto, moneda, locale, mínimos, funcionalidades, listas, lista pública default y datos públicos básicos. La confirmación ejecuta una RPC PostgreSQL única e idempotente por slug.
+
+La ruta usa `RUNIA_INTERNAL_PASSWORD` y una cookie HMAC propia. Una sesión de `/admin` no concede acceso a Setup. Todas las escrituras son server-side y la RPC sólo puede ejecutarse con `service_role`.
+
+Antes de usarla se debe aplicar [009_runia_setup_engine_v0.sql](./db/migrations/009_runia_setup_engine_v0.sql) mediante el pipeline de migraciones. Ver [documentación completa](./docs/RUNIA_SETUP_ENGINE_V0.md).
 
 Rutas iniciales:
 
 - `/`: home de Runia Catalog System.
 - `/catalogo`: catalogo publico configurable con busqueda, filtros por categoria/marca, orden y la lista publica/default del tenant.
 - `/catalogo/[sku]`: detalle publico del producto y consulta por WhatsApp usando el numero configurado en el tenant.
+- `/demo-commerce`: segunda experiencia pública editorial; usa selección destacada, búsqueda, filtros e índice completo mediante el SDK.
+- `/demo-commerce/[sku]`: detalle editorial con WhatsApp y not-found resueltos por contratos públicos del SDK.
 - `/runia`: consola central SaaS para listar tenants y entrar al workspace de un cliente.
-- `/runia/tenants/new`: alta de tenant con listas base, settings iniciales y feature flags.
+- `/runia/setup`: Setup Engine interno con autenticación independiente.
+- `/runia/tenants/new`: redirige al Setup Engine transaccional.
 - `/admin`: Commercial Workspace con quick actions, trabajo pendiente, actividad reciente y resumen operativo.
 - `/admin/productos`: listado y edicion de productos.
 - `/admin/precios`: gestion de listas Minorista y Mayorista, edicion inline y acciones masivas auditadas.
@@ -260,9 +333,11 @@ Backoffice:
 - `/runia` es el nivel superior interno de Runia. Permite crear tenants, ver metricas por cliente y seleccionar el tenant operativo antes de entrar a `/admin`.
 - Al entrar a un tenant desde `/runia`, la app guarda una seleccion segura en cookie httpOnly. Si no hay seleccion, usa `NEXT_PUBLIC_TENANT_SLUG` como fallback.
 - `/admin` y `/admin/*` requieren sesion simple con cookie httpOnly.
-- `/runia` y `/runia/*` requieren la misma sesion interna.
+- `/runia` y el workspace central usan la sesión de `ADMIN_PASSWORD`.
+- `/runia/setup` usa una sesión independiente basada en `RUNIA_INTERNAL_PASSWORD`.
 - `/admin/login` es publico y valida contra `ADMIN_PASSWORD`.
 - `ADMIN_PASSWORD` nunca debe tener prefijo `NEXT_PUBLIC`.
+- `RUNIA_INTERNAL_PASSWORD` y `SUPABASE_SERVICE_ROLE_KEY` tampoco deben tener prefijo `NEXT_PUBLIC`.
 - `/catalogo` y `/` siguen siendo publicos.
 - Sin Supabase Auth, roles, carrito ni checkout en esta etapa.
 
@@ -288,4 +363,4 @@ npm run dev
 
 ## Proximo paso recomendado
 
-Ejecutar las migraciones en Supabase SQL Editor y luego preparar el importador de la muestra piloto desde `data/RB_CATALOGO_MASTER.xlsx`.
+Aplicar `009_runia_setup_engine_v0.sql`, ejecutar el E2E de creación sobre un tenant de QA y usar el SDK interno como único acceso Commerce en la próxima web Runia.

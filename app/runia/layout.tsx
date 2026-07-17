@@ -17,6 +17,7 @@ export default function RuniaLayout({ children }: { children: ReactNode }) {
 
         <nav className="runia-topnav" aria-label="Runia">
           <Link href="/runia">Tenants</Link>
+          <Link href="/runia/setup">Setup Engine</Link>
           <Link href="/admin">Workspace</Link>
           <form action="/admin/logout" method="post">
             <button type="submit">Salir</button>

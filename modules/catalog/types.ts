@@ -38,6 +38,7 @@ export type CatalogTenant = {
   currency: string;
   locale: string;
   features: {
+    showPrices: boolean;
     publicCatalog: boolean;
     orders: boolean;
     accountLogin: boolean;

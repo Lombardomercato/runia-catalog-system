@@ -41,7 +41,14 @@ type PublicCommerceContextValue = {
   setOpen(open: boolean): void;
 };
 
+type PublicCommerceAddContextValue = {
+  enabled: boolean;
+  submitted: boolean;
+  addProduct(product: PublicCommerceProduct): Promise<boolean>;
+};
+
 const PublicCommerceContext = createContext<PublicCommerceContextValue | null>(null);
+const PublicCommerceAddContext = createContext<PublicCommerceAddContextValue | null>(null);
 
 export function PublicCommerceProvider({ children }: { children: ReactNode }) {
   const serviceRef = useRef<PublicCommerceService | null>(null);
@@ -193,11 +200,27 @@ export function PublicCommerceProvider({ children }: { children: ReactNode }) {
     submitDraft,
   ]);
 
-  return <PublicCommerceContext.Provider value={value}>{children}</PublicCommerceContext.Provider>;
+  const addValue = useMemo<PublicCommerceAddContextValue>(() => ({
+    enabled: tenant?.enabled === true && draft?.status !== 'submitted',
+    submitted: draft?.status === 'submitted',
+    addProduct,
+  }), [addProduct, draft?.status, tenant?.enabled]);
+
+  return (
+    <PublicCommerceAddContext.Provider value={addValue}>
+      <PublicCommerceContext.Provider value={value}>{children}</PublicCommerceContext.Provider>
+    </PublicCommerceAddContext.Provider>
+  );
 }
 
 export function usePublicCommerce() {
   const context = useContext(PublicCommerceContext);
+  if (!context) throw new Error('PublicCommerceProvider is required.');
+  return context;
+}
+
+export function usePublicCommerceAddProduct() {
+  const context = useContext(PublicCommerceAddContext);
   if (!context) throw new Error('PublicCommerceProvider is required.');
   return context;
 }

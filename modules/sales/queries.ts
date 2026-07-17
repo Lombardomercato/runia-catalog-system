@@ -51,6 +51,31 @@ const SALES_ORDER_SELECT = `
   )
 `;
 
+const SALES_ORDER_LIST_SELECT = `
+  id,
+  account_id,
+  status,
+  price_list_id,
+  subtotal,
+  discount,
+  total,
+  metadata_json,
+  source,
+  currency,
+  identity_snapshot_json,
+  commercial_snapshot_json,
+  created_at,
+  updated_at,
+  customer_accounts:account_id(name),
+  price_lists:price_list_id(name),
+  sales_order_items(
+    id,
+    sku_snapshot,
+    product_name_snapshot,
+    variant_snapshot
+  )
+`;
+
 const SALES_PRODUCT_SELECT = `
   id,
   sku,
@@ -86,7 +111,7 @@ export async function listSalesOrders(
 
   let query = supabaseServer
     .from('sales_orders')
-    .select(SALES_ORDER_SELECT, { count: 'exact' })
+    .select(SALES_ORDER_LIST_SELECT, { count: 'exact' })
     .eq('tenant_id', tenantResult.tenant.id);
 
   if (params.status !== 'all') {

@@ -5,7 +5,7 @@ import type {
   WorkspaceRecentOrderRow,
 } from './types';
 
-const relevantActions = new Set([
+export const WORKSPACE_ACTIVITY_ACTIONS = [
   'sales_order.created',
   'sales_order_created',
   'sales_order.duplicated',
@@ -13,7 +13,9 @@ const relevantActions = new Set([
   'product_price.updated',
   'catalog.import_completed',
   'catalog.import_failed',
-]);
+] as const;
+
+const relevantActions = new Set<string>(WORKSPACE_ACTIVITY_ACTIONS);
 
 export function isWorkspaceActivity(row: AuditLogRow) {
   return relevantActions.has(row.action);

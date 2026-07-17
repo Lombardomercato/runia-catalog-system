@@ -17,6 +17,7 @@ import {
   projectPublicProduct,
   resolvePublicCatalogContext,
   toPublicPricingTenant,
+  toResolvedPublicPriceLists,
 } from '../publicCatalogPolicy';
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -51,7 +52,10 @@ export class ListPublicProducts {
 
     let snapshot;
     try {
-      snapshot = await this.repository.loadCatalogSnapshot(tenantResult.value.id);
+      snapshot = await this.repository.loadCatalogSnapshot(
+        tenantResult.value.id,
+        tenantResult.value.priceList.id,
+      );
     } catch {
       return productsFailure('REPOSITORY_FAILURE', 'The public catalog could not be loaded.');
     }
@@ -71,7 +75,7 @@ export class ListPublicProducts {
     for (const product of candidates) {
       const resolvedPrice = this.pricing.execute({
         tenant: toPublicPricingTenant(tenantResult.value),
-        priceLists: snapshot.priceLists,
+        priceLists: toResolvedPublicPriceLists(tenantResult.value),
         productId: product.id,
         prices: product.prices,
       });
@@ -153,12 +157,18 @@ function comparePublicProducts(
     if (leftPrice === null) return 1;
     if (rightPrice === null) return -1;
     const result = leftPrice - rightPrice;
-    return sort === 'price_asc' ? result : -result;
+    if (result !== 0) return sort === 'price_asc' ? result : -result;
+    return stableProductTieBreak(left, right);
   }
   const leftValue = sort === 'sku_asc' ? left.sku : left.name;
   const rightValue = sort === 'sku_asc' ? right.sku : right.name;
   const result = compareText(leftValue, rightValue);
-  return sort === 'name_desc' ? -result : result;
+  if (result !== 0) return sort === 'name_desc' ? -result : result;
+  return stableProductTieBreak(left, right);
+}
+
+function stableProductTieBreak(left: PublicProductListItem, right: PublicProductListItem) {
+  return compareText(left.name, right.name) || compareText(left.sku, right.sku) || left.id.localeCompare(right.id);
 }
 
 function compareCategories(left: PublicCategorySnapshot, right: PublicCategorySnapshot) {

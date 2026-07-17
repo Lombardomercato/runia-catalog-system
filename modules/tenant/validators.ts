@@ -213,6 +213,7 @@ function parseNonNegativeAmount(
 
 function normalizeFeatureFlags(features: TenantFeatureFlags | null | undefined): TenantFeatureFlags {
   return {
+    showPrices: features?.showPrices === true,
     publicCatalog: features?.publicCatalog === true,
     orders: features?.orders === true,
     wholesaleLogin: features?.wholesaleLogin === true,

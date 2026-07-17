@@ -30,7 +30,11 @@ export function buildImportReport(
   ) as Record<ImportSheetName, ImportSheetStats>;
 
   parsed.categories.forEach((row) => incrementPlan(stats.Categorias, existing.categoriesByExternalId.has(row.externalId)));
-  parsed.brands.forEach((row) => incrementPlan(stats.Marcas, existing.brandsByExternalId.has(row.externalId)));
+  parsed.brands.forEach((row) => incrementPlan(
+    stats.Marcas,
+    existing.brandsByExternalId.has(row.externalId) ||
+      (isControlledPlaceholderBrand(row.name) && Boolean(existing.controlledBrandId)),
+  ));
   parsed.products.forEach((row) => incrementPlan(stats.Productos, existing.productsBySku.has(row.sku)));
   parsed.prices.forEach((row) => {
     const productId = existing.productsBySku.get(row.sku);
@@ -48,6 +52,10 @@ export function buildImportReport(
     stats,
     errors: parsed.errors,
   };
+}
+
+export function isControlledPlaceholderBrand(value: string) {
+  return value.trim().toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g, '') === 'sin marca';
 }
 
 export function applyExecutionCounts(report: ImportReport, created: ImportCountMap, updated: ImportCountMap) {

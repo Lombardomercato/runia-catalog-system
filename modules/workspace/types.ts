@@ -77,7 +77,7 @@ export type AuditLogRow = {
   entity_type: string;
   entity_id: string | null;
   action: string;
-  metadata_json: Record<string, unknown> | null;
+  metadata_json?: Record<string, unknown> | null;
   before_json: Record<string, unknown> | null;
   after_json: Record<string, unknown> | null;
   created_at: string;

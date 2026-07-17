@@ -1,6 +1,7 @@
 import { supabaseServer } from '@/lib/supabaseServer';
 import { getTenantIdentity } from '@/modules/tenant/queries';
 import {
+  WORKSPACE_ACTIVITY_ACTIONS,
   isWorkspaceActivity,
   mapAuditLogRowToActivity,
   mapRecentOrderRow,
@@ -132,10 +133,11 @@ async function getRecentActivity(tenantId: string): Promise<{
 }> {
   const { data, error } = await supabaseServer
     .from('audit_logs')
-    .select('id, actor_name, entity_type, entity_id, action, metadata_json, before_json, after_json, created_at')
+    .select('id, actor_name, entity_type, entity_id, action, before_json, after_json, created_at')
     .eq('tenant_id', tenantId)
+    .in('action', [...WORKSPACE_ACTIVITY_ACTIONS])
     .order('created_at', { ascending: false })
-    .limit(100);
+    .limit(20);
   if (error) return { activity: [], error: error.message };
   const activity = ((data ?? []) as AuditLogRow[])
     .filter(isWorkspaceActivity)

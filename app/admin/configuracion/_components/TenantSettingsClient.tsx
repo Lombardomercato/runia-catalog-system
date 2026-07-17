@@ -48,6 +48,11 @@ const featureLabels: Array<{
   description: string;
 }> = [
   {
+    key: 'showPrices',
+    label: 'Mostrar precios',
+    description: 'Expone al SDK la preferencia publica de presentar importes.',
+  },
+  {
     key: 'publicCatalog',
     label: 'Catalogo publico',
     description: 'Permite mostrar productos activos sin login.',

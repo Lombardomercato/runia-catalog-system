@@ -20,7 +20,7 @@ export function mapTenantRowToListItem(row: TenantRow, counts: TenantCounts): Te
 }
 
 function normalizeStatus(value: string): TenantStatus {
-  if (value === 'inactive' || value === 'archived') {
+  if (value === 'setup' || value === 'inactive' || value === 'archived') {
     return value;
   }
 

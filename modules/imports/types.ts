@@ -42,6 +42,7 @@ export type ImportReport = {
 export type ExistingImportState = {
   categoriesByExternalId: Map<string, string>;
   brandsByExternalId: Map<string, string>;
+  controlledBrandId: string | null;
   productsBySku: Map<string, string>;
   pricesByProductAndList: Set<string>;
   priceListsByCode: Map<string, string>;

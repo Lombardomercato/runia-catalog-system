@@ -165,23 +165,39 @@ async function writeTenantFeatureFlags(
   tenantId: string,
   input: NormalizedUpdateFeatureFlagsInput,
 ): Promise<TenantCommandResult> {
-  const { data, error } = await supabaseServer
+  const featurePayload = {
+    feature_show_prices: input.features.showPrices,
+    feature_public_catalog: input.features.publicCatalog,
+    feature_orders: input.features.orders,
+    feature_wholesale_login: input.features.wholesaleLogin,
+    feature_multiple_price_lists: input.features.multiplePriceLists,
+    feature_importer: input.features.importer,
+    feature_images: input.features.images,
+    feature_stock: input.features.stock,
+    feature_invoicing: input.features.invoicing,
+  };
+  let write = await supabaseServer
     .from('tenants')
-    .update({
-      feature_public_catalog: input.features.publicCatalog,
-      feature_orders: input.features.orders,
-      feature_wholesale_login: input.features.wholesaleLogin,
-      feature_multiple_price_lists: input.features.multiplePriceLists,
-      feature_importer: input.features.importer,
-      feature_images: input.features.images,
-      feature_stock: input.features.stock,
-      feature_invoicing: input.features.invoicing,
-    })
+    .update(featurePayload)
     .eq('id', tenantId)
     .select('updated_at')
     .single();
 
-  return writeResult(error?.message ?? null, data?.updated_at, 'Funcionalidades actualizadas.');
+  if (write.error?.message.includes('feature_show_prices')) {
+    const { feature_show_prices: _showPrices, ...legacyPayload } = featurePayload;
+    write = await supabaseServer
+      .from('tenants')
+      .update(legacyPayload)
+      .eq('id', tenantId)
+      .select('updated_at')
+      .single();
+  }
+
+  return writeResult(
+    write.error?.message ?? null,
+    write.data?.updated_at,
+    'Funcionalidades actualizadas.',
+  );
 }
 
 async function getTenant(tenantSlug: string): Promise<{
@@ -192,7 +208,7 @@ async function getTenant(tenantSlug: string): Promise<{
     .from('tenants')
     .select('id, slug')
     .eq('slug', tenantSlug)
-    .eq('status', 'active')
+    .in('status', ['active', 'setup'])
     .single();
 
   if (error || !data) {

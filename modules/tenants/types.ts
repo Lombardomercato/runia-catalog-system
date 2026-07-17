@@ -1,4 +1,4 @@
-export type TenantStatus = 'active' | 'inactive' | 'archived';
+export type TenantStatus = 'setup' | 'active' | 'inactive' | 'archived';
 
 export type TenantListItem = {
   id: string;

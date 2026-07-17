@@ -40,6 +40,7 @@ export type TenantCommercialSettings = {
 };
 
 export type TenantFeatureFlags = {
+  showPrices: boolean;
   publicCatalog: boolean;
   orders: boolean;
   wholesaleLogin: boolean;
@@ -155,6 +156,7 @@ export type TenantRow = {
   minimum_order_amount: number | string | null;
   minimum_purchase_amount: number | string | null;
   default_price_list_id: string | null;
+  feature_show_prices?: boolean | null;
   feature_public_catalog: boolean | null;
   feature_orders: boolean | null;
   feature_wholesale_login: boolean | null;

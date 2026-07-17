@@ -1,7 +1,7 @@
-import { RuniaTenantCreateForm } from '../../_components/RuniaTenantCreateForm';
+import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
 export default function RuniaTenantNewPage() {
-  return <RuniaTenantCreateForm />;
+  redirect('/runia/setup');
 }

@@ -33,6 +33,7 @@ export function mapTenantSettings(
       defaultPriceListId: row.default_price_list_id,
     },
     features: {
+      showPrices: row.feature_show_prices ?? true,
       publicCatalog: row.feature_public_catalog ?? true,
       orders: row.feature_orders ?? true,
       wholesaleLogin: row.feature_wholesale_login ?? false,

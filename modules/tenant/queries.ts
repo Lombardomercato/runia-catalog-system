@@ -1,3 +1,6 @@
+import 'server-only';
+
+import { cache } from 'react';
 import { supabaseServer } from '@/lib/supabaseServer';
 import { mapTenantSettings } from './mapper';
 import type {
@@ -24,6 +27,7 @@ const TENANT_SETTINGS_SELECT = `
   minimum_order_amount,
   minimum_purchase_amount,
   default_price_list_id,
+  feature_show_prices,
   feature_public_catalog,
   feature_orders,
   feature_wholesale_login,
@@ -35,12 +39,14 @@ const TENANT_SETTINGS_SELECT = `
   updated_at
 `;
 
-export async function getTenantIdentity(tenantSlug: string): Promise<TenantIdentityResult> {
+export const getTenantIdentity = cache(async function getTenantIdentity(
+  tenantSlug: string,
+): Promise<TenantIdentityResult> {
   const { data, error } = await supabaseServer
     .from('tenants')
     .select('id, slug, name, currency')
     .eq('slug', tenantSlug)
-    .eq('status', 'active')
+    .in('status', ['active', 'setup'])
     .single();
 
   if (error || !data) {
@@ -54,15 +60,26 @@ export async function getTenantIdentity(tenantSlug: string): Promise<TenantIdent
     tenant: data,
     error: null,
   };
-}
+});
 
 export async function getTenantSettings(tenantSlug: string): Promise<TenantSettingsResult> {
-  const { data, error } = await supabaseServer
+  let tenantResult = await supabaseServer
     .from('tenants')
     .select(TENANT_SETTINGS_SELECT)
     .eq('slug', tenantSlug)
-    .eq('status', 'active')
+    .in('status', ['active', 'setup'])
     .single();
+
+  if (tenantResult.error?.message.includes('feature_show_prices')) {
+    tenantResult = await supabaseServer
+      .from('tenants')
+      .select(TENANT_SETTINGS_SELECT.replace('feature_show_prices,', ''))
+      .eq('slug', tenantSlug)
+      .in('status', ['active', 'setup'])
+      .single() as typeof tenantResult;
+  }
+
+  const { data, error } = tenantResult;
 
   if (error || !data) {
     return {

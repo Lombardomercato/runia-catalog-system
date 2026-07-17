@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { writeAuditLog } from '@/lib/audit';
 import { getCurrentTenantSlug } from '@/lib/currentTenant';
 import { supabaseServer } from '@/lib/supabaseServer';
-import { applyExecutionCounts, buildImportReport, parseWorkbookBuffer, slugifyImportValue, zeroImportCounts } from './mapper';
+import { applyExecutionCounts, buildImportReport, isControlledPlaceholderBrand, parseWorkbookBuffer, slugifyImportValue, zeroImportCounts } from './mapper';
 import { getImportContext } from './queries';
 import { validateImportFileMetadata, validateWorkbookAgainstState } from './validators';
 import type {
@@ -188,15 +188,36 @@ async function executeImport(
   }
 
   for (const brand of parsed.brands) {
-    const existed = brandIds.has(brand.externalId);
+    const controlledPlaceholder = isControlledPlaceholderBrand(brand.name)
+      ? existing.controlledBrandId
+      : null;
+    const existed = brandIds.has(brand.externalId) || Boolean(controlledPlaceholder);
     const id = await runTrackedRow(tenant.id, batchId, 'Marcas', brand.rowNumber, 'brands', brand.raw, async () => {
+      if (controlledPlaceholder) {
+        const { data, error } = await supabaseServer
+          .from('brands')
+          .update({
+            external_id: brand.externalId,
+            name: brand.name,
+            slug: 'sin-marca',
+            price_adjustment_percent: brand.priceAdjustmentPercent,
+            is_controlled_placeholder: true,
+            is_active: brand.isActive,
+          })
+          .eq('tenant_id', tenant.id)
+          .eq('id', controlledPlaceholder)
+          .select('id')
+          .single();
+        if (error) throw new Error(error.message);
+        return String(data.id);
+      }
       const { data, error } = await supabaseServer.from('brands').upsert({
         tenant_id: tenant.id,
         external_id: brand.externalId,
         name: brand.name,
         slug: slugifyImportValue(brand.name),
         price_adjustment_percent: brand.priceAdjustmentPercent,
-        is_controlled_placeholder: brand.name.trim().toLowerCase() === 'sin marca',
+        is_controlled_placeholder: isControlledPlaceholderBrand(brand.name),
         is_active: brand.isActive,
       }, { onConflict: 'tenant_id,external_id' }).select('id').single();
       if (error) throw new Error(error.message);

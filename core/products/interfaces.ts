@@ -1,7 +1,4 @@
-import type {
-  PublicPriceListSnapshot,
-  PublicProductPriceSnapshot,
-} from '../pricing/interfaces';
+import type { PublicProductPriceSnapshot } from '../pricing/interfaces';
 import type { TenantPublicConfig } from '../tenant/interfaces';
 
 export type ProductSortField = 'name' | 'sku' | 'createdAt' | 'updatedAt';
@@ -93,6 +90,13 @@ export interface GetPublicProductBySkuInput {
   sku: string;
 }
 
+export interface ListFeaturedPublicProductsInput {
+  tenantSlug: string;
+  limit?: number;
+  categoryId?: string;
+  brandId?: string;
+}
+
 export interface PublicCategorySnapshot {
   id: string;
   name: string;
@@ -122,23 +126,43 @@ export interface PublicProductSnapshot {
 export interface PublicCatalogSnapshot {
   categories: PublicCategorySnapshot[];
   brands: PublicBrandSnapshot[];
-  priceLists: PublicPriceListSnapshot[];
   products: PublicProductSnapshot[];
 }
 
 export interface PublicProductDetailSnapshot {
-  priceLists: PublicPriceListSnapshot[];
   product: PublicProductSnapshot | null;
   category: PublicCategorySnapshot | null;
   brand: PublicBrandSnapshot | null;
 }
 
+export interface PublicFeaturedProductCandidateSnapshot {
+  product: PublicProductSnapshot;
+  category: PublicCategorySnapshot | null;
+  brand: PublicBrandSnapshot | null;
+}
+
 export interface PublicProductsRepository {
-  loadCatalogSnapshot(tenantId: string): Promise<PublicCatalogSnapshot>;
+  loadCatalogSnapshot(
+    tenantId: string,
+    priceListId: string,
+  ): Promise<PublicCatalogSnapshot>;
   loadProductBySkuSnapshot(
     tenantId: string,
     sku: string,
+    priceListId: string,
   ): Promise<PublicProductDetailSnapshot>;
+}
+
+export interface PublicFeaturedProductsRepository {
+  loadFeaturedCandidatesSnapshot(
+    tenantId: string,
+    priceListId: string,
+    input: {
+      limit: number;
+      categoryId: string | null;
+      brandId: string | null;
+    },
+  ): Promise<PublicFeaturedProductCandidateSnapshot[]>;
 }
 
 export type PublicCatalogTenant = TenantPublicConfig;
@@ -187,4 +211,10 @@ export interface ListPublicProductsOutput {
 export interface GetPublicProductBySkuOutput {
   tenant: PublicCatalogTenant;
   product: PublicProductDetail;
+}
+
+export interface ListFeaturedPublicProductsOutput {
+  tenant: PublicCatalogTenant;
+  products: PublicProductListItem[];
+  strategy: string;
 }

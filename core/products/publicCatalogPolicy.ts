@@ -1,6 +1,7 @@
 import type { ProductsDomainError, ProductsResult } from './errors';
 import type { PricingDomainError } from '../pricing/errors';
 import type {
+  PublicPriceListSnapshot,
   PublicPricingTenantSnapshot,
   ResolvedPublicPrice,
 } from '../pricing/interfaces';
@@ -42,6 +43,16 @@ export function toPublicPricingTenant(
   };
 }
 
+export function toResolvedPublicPriceLists(
+  tenant: TenantPublicConfig,
+): PublicPriceListSnapshot[] {
+  return [{
+    ...tenant.priceList,
+    active: true,
+    isDefault: true,
+  }];
+}
+
 export function projectPublicProduct(
   product: PublicProductSnapshot,
   category: PublicCategorySnapshot,
@@ -73,7 +84,7 @@ export function mapPublicPricingFailure(
     return productsFailure('PUBLIC_PRICE_LIST_NOT_FOUND', error.message);
   }
   if (error.code === 'PUBLIC_PRICE_NOT_FOUND' || error.code === 'CURRENCY_UNAVAILABLE') {
-    return productsFailure('PRODUCT_NOT_FOUND', error.message);
+    return productsFailure(error.code, error.message);
   }
   if (error.code === 'INVALID_INPUT') {
     return productsFailure('INVALID_INPUT', error.message);
