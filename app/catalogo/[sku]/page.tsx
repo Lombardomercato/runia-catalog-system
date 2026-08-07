@@ -20,7 +20,7 @@ import { buildCatalogWhatsAppUrl, formatCatalogWhatsAppMessage } from '../catalo
 export const dynamic = 'force-dynamic';
 
 export default async function CatalogProductPage({ params }: { params: Promise<{ sku: string }> }) {
-  const tenantSlug = await getCurrentTenantSlug();
+  const tenantSlug = await getCurrentTenantSlug('public');
   const { sku } = await params;
   const commerce = createCommerceClient({ tenantSlug });
   let tenant: CommerceTenantPublicConfig;

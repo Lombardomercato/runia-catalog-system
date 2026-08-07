@@ -9,7 +9,8 @@
     "start": "next start",
     "test:sdk": "node --import ./scripts/register-server-only-test-hook.mjs --import tsx --test sdk/server/contract.test.ts",
     "test:setup": "node --import ./scripts/register-server-only-test-hook.mjs --import tsx --test modules/setup/contract.test.ts",
-    "test:contracts": "npm run test:sdk && npm run test:setup",
+    "test:security": "node --import ./scripts/register-server-only-test-hook.mjs --import tsx --test lib/tenantResolver.test.ts",
+    "test:contracts": "npm run test:sdk && npm run test:setup && npm run test:security",
     "import:rb": "tsx scripts/imports/import-rb-catalog.ts",
     "import:rb:dry": "tsx scripts/imports/import-rb-catalog.ts --dry-run"
   },

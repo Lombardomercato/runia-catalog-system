@@ -20,7 +20,7 @@ type CatalogPageProps = {
 };
 
 export default async function CatalogoPage({ searchParams }: CatalogPageProps) {
-  const tenantSlug = await getCurrentTenantSlug();
+  const tenantSlug = await getCurrentTenantSlug('public');
   const params = parseCatalogSearchParams(searchParams ? await searchParams : {});
   const commerce = createCommerceClient({ tenantSlug });
   let tenant: CommerceTenantPublicConfig | null = null;

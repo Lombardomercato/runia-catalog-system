@@ -5,7 +5,7 @@ import { getTenantIdentity } from '@/modules/tenant/queries';
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
-  const tenantSlug = await getCurrentTenantSlug();
+  const tenantSlug = await getCurrentTenantSlug('public');
   const tenantResult = await getTenantIdentity(tenantSlug);
   const tenantName = tenantResult.tenant?.name ?? tenantSlug;
 
