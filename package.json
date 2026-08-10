@@ -9,10 +9,23 @@
     "start": "next start",
     "test:sdk": "node --import ./scripts/register-server-only-test-hook.mjs --import tsx --test sdk/server/contract.test.ts",
     "test:setup": "node --import ./scripts/register-server-only-test-hook.mjs --import tsx --test modules/setup/contract.test.ts",
-    "test:security": "node --import ./scripts/register-server-only-test-hook.mjs --import tsx --test lib/tenantResolver.test.ts",
-    "test:contracts": "npm run test:sdk && npm run test:setup && npm run test:security",
+    "test:suppliers": "node --import tsx --test core/suppliers/sync.test.ts",
+    "test:suppliers:db": "bash scripts/suppliers/test-db-integration.sh",
+    "test:contracts": "npm run test:sdk && npm run test:setup && npm run test:security && npm run test:suppliers",
+    "sync:vinros:dry": "node --import ./scripts/register-server-only-test-hook.mjs --import tsx scripts/suppliers/sync-vinros.ts --dry-run",
+    "sync:vinros:write": "node --import ./scripts/register-server-only-test-hook.mjs --import tsx scripts/suppliers/sync-vinros.ts --write",
+    "sync:vinros:dev:preflight": "bash scripts/suppliers/runia-dev-vinros.sh preflight",
+    "sync:vinros:dev:migrate": "bash scripts/suppliers/runia-dev-vinros.sh migrate",
+    "sync:vinros:dev:verify": "bash scripts/suppliers/runia-dev-vinros.sh verify",
+    "sync:vinros:dev:harness": "bash scripts/suppliers/runia-dev-vinros.sh harness",
+    "sync:vinros:dev:dry": "bash scripts/suppliers/runia-dev-vinros.sh dry",
+    "sync:vinros:dev:write:first": "bash scripts/suppliers/runia-dev-vinros.sh write-first",
+    "sync:vinros:dev:audit:first": "bash scripts/suppliers/runia-dev-vinros.sh audit-first",
+    "sync:vinros:dev:write:second": "bash scripts/suppliers/runia-dev-vinros.sh write-second",
+    "sync:vinros:dev:audit:second": "bash scripts/suppliers/runia-dev-vinros.sh audit-second",
     "import:rb": "tsx scripts/imports/import-rb-catalog.ts",
-    "import:rb:dry": "tsx scripts/imports/import-rb-catalog.ts --dry-run"
+    "import:rb:dry": "tsx scripts/imports/import-rb-catalog.ts --dry-run",
+    "test:security": "node --import ./scripts/register-server-only-test-hook.mjs --import tsx --test lib/tenantResolver.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
@@ -20,7 +33,7 @@
     "next": "^15.3.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "xlsx": "^0.18.5"
+    "read-excel-file": "9.3.4"
   },
   "devDependencies": {
     "@types/node": "^22.7.4",

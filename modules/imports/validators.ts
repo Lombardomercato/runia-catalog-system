@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import {
   IMPORT_SHEETS,
   type ExistingImportState,
@@ -18,7 +17,7 @@ export function validateImportFileMetadata(name: string, size: number) {
   return null;
 }
 
-export function parseAndValidateWorkbook(workbook: XLSX.WorkBook): ValidatedWorkbook {
+export function parseAndValidateWorkbook(workbook: Partial<Record<ImportSheetName, unknown[][] | null>>): ValidatedWorkbook {
   const errors: ImportValidationError[] = [];
   const rows = Object.fromEntries(
     IMPORT_SHEETS.map((sheet) => [sheet, readSheet(workbook, sheet, errors)]),
@@ -68,16 +67,22 @@ export function validateWorkbookAgainstState(
 }
 
 function readSheet(
-  workbook: XLSX.WorkBook,
+  workbook: Partial<Record<ImportSheetName, unknown[][] | null>>,
   sheetName: ImportSheetName,
   errors: ImportValidationError[],
 ) {
-  const sheet = workbook.Sheets[sheetName];
-  if (!sheet) {
+  const sheet = workbook[sheetName];
+  if (!sheet?.length) {
     addError(errors, sheetName, 1, 'hoja', `No existe la hoja obligatoria "${sheetName}".`, sheetName);
     return [];
   }
-  return XLSX.utils.sheet_to_json<SheetRow>(sheet, { defval: null, raw: false });
+  const headers = sheet[0].map((value) => normalizeText(value));
+  return sheet.slice(1).filter((row) => row.some((value) => value !== null && value !== undefined && value !== '')).map((row) => Object.fromEntries(headers.map((header, index) => [header || `column_${index + 1}`, cellValue(row[index])]))) as SheetRow[];
+}
+
+function cellValue(value: unknown) {
+  if (value === null || value === undefined || typeof value === 'number' || typeof value === 'boolean') return value ?? null;
+  return value instanceof Date ? value.toISOString() : String(value);
 }
 
 function validateCategories(rows: SheetRow[], errors: ImportValidationError[]) {

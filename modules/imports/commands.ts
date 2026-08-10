@@ -145,7 +145,7 @@ async function prepareImport(
   const startedAt = new Date();
   let parsed: ValidatedWorkbook;
   try {
-    parsed = parseWorkbookBuffer(buffer);
+    parsed = await parseWorkbookBuffer(buffer);
   } catch (error) {
     return { ok: false, result: commandError(mode === 'preview' ? 'preview' : 'failed', `No se pudo leer el XLSX: ${normalizeImportError(error)}`) };
   }

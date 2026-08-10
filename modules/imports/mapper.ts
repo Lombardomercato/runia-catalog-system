@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import readXlsxFile from 'read-excel-file/node';
 import { parseAndValidateWorkbook } from './validators';
 import {
   IMPORT_SHEETS,
@@ -12,9 +12,14 @@ import {
   type ValidatedWorkbook,
 } from './types';
 
-export function parseWorkbookBuffer(buffer: Uint8Array) {
-  const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: false });
-  return parseAndValidateWorkbook(workbook);
+export async function parseWorkbookBuffer(buffer: Uint8Array) {
+  const input = Buffer.from(buffer);
+  const workbook = await readXlsxFile(input);
+  const rows = Object.fromEntries(IMPORT_SHEETS.map((sheet) => [
+    sheet,
+    workbook.find((candidate) => candidate.sheet === sheet)?.data ?? null,
+  ])) as Partial<Record<ImportSheetName, unknown[][] | null>>;
+  return parseAndValidateWorkbook(rows);
 }
 
 export function buildImportReport(
