@@ -1,15 +1,22 @@
 # Runia Production bootstrap gate
 
-Runia Production does not currently exist. It must be a new Supabase project,
-independent from Runia Dev (`rtnzzfzofeqmtdmbchbw`) and Sommelier IA. Project
-creation is blocked until Supabase reports the exact incremental cost and the
-owner approves it.
+Runia Production exists as the independent Supabase project
+`ymowgnjusqzkqjpwokib` in `sa-east-1`. It is separate from Runia Dev
+(`rtnzzfzofeqmtdmbchbw`) and Sommelier IA. Supabase reported an incremental
+cost of USD 0/month, the owner approved creation, and the project was created
+on 2026-08-13. It is not connected to Vercel Production.
 
 ## Build from versioned migrations
 
-Use a new empty project in `sa-east-1`, matching the Runia Dev region. Apply,
-in filename order, only the SQL in `db/migrations/001_initial_schema.sql`
-through `014_lombardo_commerce_orders.sql`. Do not dump or restore Runia Dev.
+The empty project was built in `sa-east-1`, matching the Runia Dev region. The
+SQL in `db/migrations/001_initial_schema.sql` through
+`014_lombardo_commerce_orders.sql` was applied in filename order. Runia Dev was
+not dumped or restored.
+
+Post-bootstrap verification recorded 14 applied migrations, 26 public tables,
+RLS enabled on all 26 tables, and zero tenants, catalog products, suppliers,
+supplier runs, commerce orders, payment events, Auth users, or Storage objects.
+No VINROS write was executed.
 
 After applying the schema:
 
