@@ -15,11 +15,16 @@ export class HttpSupplierSheetLoader implements SupplierSourceLoader {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url, {
+      const request = (): RequestInit => ({
         signal: controller.signal,
         redirect: 'follow',
         headers: { accept: 'text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
       });
+      let response = await fetch(url, request());
+      const fallbackUrl = googleVisualizationCsvUrl(source.url);
+      if (!response.ok && fallbackUrl && fallbackUrl !== url) {
+        response = await fetch(fallbackUrl, request());
+      }
       if (!response.ok) throw new Error(`SOURCE_HTTP_ERROR: ${source.priceType} respondio HTTP ${response.status}.`);
       const declaredLength = parseContentLength(response.headers.get('content-length'));
       if (declaredLength !== null && declaredLength > maxBytes) throw new Error(`SOURCE_TOO_LARGE: ${source.priceType} supera ${formatMb(maxBytes)} MB.`);
@@ -54,6 +59,17 @@ export function downloadableGoogleSheetUrl(value: string) {
     }
   }
   return url.toString();
+}
+
+export function googleVisualizationCsvUrl(value: string) {
+  let url: URL;
+  try { url = new URL(value); } catch { return null; }
+  if (url.hostname !== 'docs.google.com') return null;
+  const match = url.pathname.match(/^\/spreadsheets\/d\/([^/]+)/);
+  if (!match) return null;
+  const gid = url.searchParams.get('gid') ?? url.hash.match(/gid=(\d+)/)?.[1];
+  if (!gid || !/^\d+$/.test(gid)) throw new Error('SOURCE_GOOGLE_SHEET_GID_REQUIRED: la fuente debe identificar una pestaña mediante gid.');
+  return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(match[1])}/gviz/tq?tqx=out%3Acsv&gid=${encodeURIComponent(gid)}`;
 }
 
 function parseHttpDate(value: string | null) { if (!value) return null; const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString(); }

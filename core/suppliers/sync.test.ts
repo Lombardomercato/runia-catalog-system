@@ -7,7 +7,7 @@ import { normalizePresentation, parseSupplierDocument, parseSupplierRows } from 
 import { planSupplierSync } from './planner';
 import { formatSupplierDryRunReport } from './report';
 import { SyncSupplierPrices } from './service';
-import { downloadableGoogleSheetUrl } from '../../modules/suppliers/HttpSupplierSheetLoader';
+import { downloadableGoogleSheetUrl, googleVisualizationCsvUrl } from '../../modules/suppliers/HttpSupplierSheetLoader';
 import {
   SUPPLIER_PRICE_TYPES,
   type ParsedSupplierSource,
@@ -57,6 +57,10 @@ test('Google Sheets exige gid explicito y Lista 2 conserva identidad de contenid
     downloadableGoogleSheetUrl(list2),
     'https://docs.google.com/spreadsheets/d/1RKu0ldsucFIk0fXCVh2KHSi1EVTPM7Gz/export?format=csv&gid=223050305',
   );
+  assert.equal(
+    googleVisualizationCsvUrl(list2),
+    'https://docs.google.com/spreadsheets/d/1RKu0ldsucFIk0fXCVh2KHSi1EVTPM7Gz/gviz/tq?tqx=out%3Acsv&gid=223050305',
+  );
   assert.throws(() => downloadableGoogleSheetUrl('https://docs.google.com/spreadsheets/d/documento/edit'), /SOURCE_GOOGLE_SHEET_GID_REQUIRED/);
   const wrongTab = source('wholesale', [['SKU', 'Producto', '750cc', 100]], { detectedList: 1 });
   assert.ok(wrongTab.issues.some((item) => item.type === 'SOURCE_IDENTITY_MISMATCH' && item.blocking));
@@ -65,6 +69,27 @@ test('Google Sheets exige gid explicito y Lista 2 conserva identidad de contenid
     rows: [['Codigo', 'Denominacion', 'Presentacion', 'Precio c/IVA'], ['SKU', 'Producto', '750cc', 100]],
   });
   assert.ok(missingIdentity.issues.some((item) => item.type === 'SOURCE_IDENTITY_NOT_FOUND' && item.blocking));
+});
+
+test('acepta cabeceras de Google Visualization combinadas con metadatos comerciales', () => {
+  const parsed = parseSupplierRows({
+    priceType: 'retail',
+    expectedListNumber: 1,
+    rows: [
+      [
+        'VINROS S.R.L LISTA DE PRECIOS Código',
+        'Denominación 1 - VINOS',
+        'Lista de Precios Fecha de Emisión:12/08/2026 Precio de Lista 1 Presentación',
+        'Precio c/IVA',
+      ],
+      ['ABS001B', 'CONTADOR DE ESTRELLAS Cab Franc x 750cc', '750cc', '13.050,05'],
+    ],
+  });
+  assert.equal(parsed.detectedListNumber, 1);
+  assert.equal(parsed.sourceEmissionDate, '2026-08-12');
+  assert.equal(parsed.validRows, 1);
+  assert.equal(parsed.products[0].supplierSku, 'ABS001B');
+  assert.equal(parsed.products[0].price, 13050.05);
 });
 
 test('bloquea cuatro listas truncadas de forma equivalente y primer write sin baseline', () => {

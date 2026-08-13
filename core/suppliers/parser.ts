@@ -223,11 +223,15 @@ export function parseCsv(text: string): string[][] {
 
 function detectColumns(row: unknown[]): ColumnMap | null {
   const normalized = row.map(normalizeHeader);
-  const sku = normalized.findIndex((value) => ['codigo', 'cod', 'sku'].includes(value));
-  const name = normalized.findIndex((value) => ['denominacion', 'producto', 'descripcion'].includes(value));
-  const presentationIndex = normalized.findIndex((value) => ['presentacion', 'unidad'].includes(value));
-  const price = normalized.findIndex((value) => value === 'precio c iva' || value === 'precio con iva' || value === 'precio');
+  const sku = normalized.findIndex((value) => hasHeaderToken(value, ['codigo', 'cod', 'sku']));
+  const name = normalized.findIndex((value) => hasHeaderToken(value, ['denominacion', 'producto', 'descripcion']));
+  const presentationIndex = normalized.findIndex((value) => hasHeaderToken(value, ['presentacion', 'unidad']));
+  const price = normalized.findIndex((value) => hasHeaderToken(value, ['precio c iva', 'precio con iva', 'precio']));
   return sku >= 0 && name >= 0 && price >= 0 ? { sku, name, presentation: presentationIndex >= 0 ? presentationIndex : null, price } : null;
+}
+
+function hasHeaderToken(value: string, tokens: string[]) {
+  return tokens.some((token) => value === token || value.startsWith(`${token} `) || value.endsWith(` ${token}`));
 }
 
 function detectListNumber(rows: unknown[][]) {
