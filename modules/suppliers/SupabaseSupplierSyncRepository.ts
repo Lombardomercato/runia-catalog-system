@@ -25,7 +25,7 @@ export class SupabaseSupplierSnapshotReader implements SupplierSnapshotReader {
     const rows = await paginateRange(async (from, to) => {
       const { data, error } = await supabaseServer
         .from('supplier_products')
-        .select('id, supplier_sku, name_raw, presentation_raw, normalized_name, normalized_presentation, last_seen_at, supplier_prices(price_type, current_price)')
+        .select('id, supplier_sku, name_raw, presentation_raw, normalized_name, normalized_presentation, eligibility_status, last_seen_at, supplier_prices(price_type, current_price)')
         .eq('supplier_id', supplier.id)
         .order('id', { ascending: true })
         .range(from, to);
@@ -37,6 +37,7 @@ export class SupabaseSupplierSnapshotReader implements SupplierSnapshotReader {
       products: rows.map((row) => ({
         id: String(row.id),
         supplierSku: String(row.supplier_sku),
+        eligibilityStatus: String(row.eligibility_status) as SupplierSyncSnapshot['products'][number]['eligibilityStatus'],
         nameRaw: String(row.name_raw),
         presentationRaw: row.presentation_raw === null ? null : String(row.presentation_raw),
         normalizedName: String(row.normalized_name),

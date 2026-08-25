@@ -186,6 +186,7 @@ export function planSupplierSync(input: {
       sourceEmissionDate: source.sourceEmissionDate,
       sourceHttpLastModified: source.sourceHttpLastModified,
       fetchedAt: source.fetchedAt,
+      contentFingerprint: source.contentFingerprint,
       rowsTotal: source.rowsRead,
       rowsValid: source.validRows,
       rowsInvalid: source.invalidRows,

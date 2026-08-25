@@ -47,6 +47,7 @@ RB Distribuidora acepto la propuesta comercial de Runia System y pago seña. Est
 - [db/migrations/005_sales.sql](./db/migrations/005_sales.sql): Sales Engine con pedidos comerciales e items con snapshot.
 - [db/migrations/006_pricing_engine.sql](./db/migrations/006_pricing_engine.sql): costos, reglas por lista y precios calculados con margen.
 - [db/migrations/009_runia_setup_engine_v0.sql](./db/migrations/009_runia_setup_engine_v0.sql): Setup Engine, RPC transaccional, estado setup y default único por tenant.
+- [db/migrations/015_vinros_automation.sql](./db/migrations/015_vinros_automation.sql): auditoría y exclusión mutua server-only para la automatización diaria de VINROS.
 - [db/seed/001_rb_seed.sql](./db/seed/001_rb_seed.sql): seed inicial de RB Distribuidora.
 - [docs/AUDIT_LOGS.md](./docs/AUDIT_LOGS.md): estrategia de auditoria futura.
 - [scripts/imports/import-rb-catalog.ts](./scripts/imports/import-rb-catalog.ts): importador del catalogo piloto de RB a Supabase.

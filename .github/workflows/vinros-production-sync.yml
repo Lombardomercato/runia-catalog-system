@@ -1,0 +1,54 @@
+name: VINROS Production Sync
+
+on:
+  schedule:
+    - cron: '20 6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: vinros-production-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Dry-run, guardrails and safe write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.RUNIA_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.RUNIA_PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+      VINROS_TENANT_SLUG: lombardo
+      VINROS_LIST_1_URL: ${{ secrets.VINROS_LIST_1_URL }}
+      VINROS_LIST_2_URL: ${{ secrets.VINROS_LIST_2_URL }}
+      VINROS_LIST_3_URL: ${{ secrets.VINROS_LIST_3_URL }}
+      VINROS_LIST_4_URL: ${{ secrets.VINROS_LIST_4_URL }}
+      VINROS_LIST_1_BASELINE_ROWS: '3230'
+      VINROS_LIST_2_BASELINE_ROWS: '3227'
+      VINROS_LIST_3_BASELINE_ROWS: '3228'
+      VINROS_LIST_4_BASELINE_ROWS: '3875'
+      VINROS_MINIMUM_PRODUCTS_PER_LIST: '10'
+      VINROS_RUN_LEASE_SECONDS: '1800'
+      VINROS_AUTOMATION_ENABLED: 'true'
+      VINROS_AUTOMATION_TRIGGER_SOURCE: ${{ github.event_name == 'workflow_dispatch' && 'manual' || 'schedule' }}
+      VINROS_ALERT_EMAIL_ENABLED: 'true'
+      VINROS_ALERT_EMAIL_TO: ${{ secrets.VINROS_ALERT_EMAIL_TO }}
+      VINROS_ALERT_EMAIL_FROM: ${{ secrets.VINROS_ALERT_EMAIL_FROM }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+    steps:
+      - name: Checkout approved main
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run VINROS automation
+        run: npm run sync:vinros:production:auto

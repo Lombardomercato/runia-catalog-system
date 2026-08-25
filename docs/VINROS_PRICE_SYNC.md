@@ -231,3 +231,41 @@ Antes de escribir exige snapshot poblado, `nuevos=0`, `existentes=3897`, `faltan
 - Dry-run contra Runia Dev: no.
 - Writes realizados en Supabase: 0.
 - Producción y Sommelier IA: no contactados.
+
+## Automatización diaria en Runia Production
+
+La sincronización productiva se ejecuta una vez por día mediante GitHub Actions,
+a las 03:20 de Argentina (`20 6 * * *` UTC). Vercel Cron fue descartado porque
+el plan Hobby limita las funciones a 5 minutos y el write real medido necesita
+aproximadamente 9,5 minutos. El workflow tiene timeout de 30 minutos, permisos
+de repositorio de sólo lectura y usa únicamente secrets server-side. No existe
+un endpoint HTTP público capaz de disparar el write.
+
+Cada invocación reclama primero un run en
+`supplier_sync_automation_runs`. El RPC usa advisory lock y un índice único
+parcial, por lo que una segunda ejecución queda registrada como
+`skipped_concurrent` sin descargar ni escribir. GitHub Actions agrega un grupo
+de concurrencia que no cancela un run activo. Un run abandonado sólo puede
+recuperarse después del lease configurado.
+
+El circuito es:
+
+1. reclamar ejecución y validar identidad productiva;
+2. descargar y validar las cuatro listas;
+3. ejecutar dry-run contra el snapshot actual;
+4. aplicar la política productiva versionada;
+5. descargar nuevamente antes del write y exigir las mismas huellas y métricas;
+6. aplicar el plan mediante `supplier_apply_sync`, transaccional e idempotente;
+7. persistir resumen de dry-run, write, métricas y resultado de alerta.
+
+Los baselines productivos aprobados son retail `3230`, wholesale `3227`,
+business `3228`, cost `3875`, con `3916` productos: `3211 safe`, `6 blocked`,
+`15 pending_review` y `684 supplier_only_cost`. Una lista por debajo del 95% o
+por encima del 110%, duplicados, más de 0,1% de filas inválidas, una variación de
+población superior al 2%, más del 25% de precios promovibles cambiando, nuevos
+BLOCKED no aprobados, más de 12 BLOCKED o más de 30 PENDING_REVIEW bloquean el
+write automático. Los cambios de precios superiores al 5% generan alerta sin
+bloquear mientras permanezcan dentro del máximo automático.
+
+Las alertas reutilizan Resend y son idempotentes por run. Un fallo de email se
+registra pero nunca cambia el resultado del sync ni fuerza un write bloqueado.

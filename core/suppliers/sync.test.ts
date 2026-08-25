@@ -365,6 +365,7 @@ function listNumber(type: SupplierPriceType): 1 | 2 | 3 | 4 { return ({ retail: 
 function availableSnapshot(overrides: Array<Partial<SupplierSyncSnapshot['products'][number]> & { supplierSku: string }> = []): SupplierSyncSnapshot {
   return { available: true, products: overrides.map((item) => ({
     id: item.id ?? `id-${item.supplierSku}`, supplierSku: item.supplierSku, nameRaw: item.nameRaw ?? 'Producto estable', presentationRaw: item.presentationRaw ?? '750cc',
+    eligibilityStatus: item.eligibilityStatus ?? 'safe',
     normalizedName: item.normalizedName ?? 'producto estable', normalizedPresentation: item.normalizedPresentation ?? '750 ml', lastSeenAt: item.lastSeenAt ?? '2026-08-01T00:00:00Z',
     prices: item.prices ?? Object.fromEntries(SUPPLIER_PRICE_TYPES.map((type) => [type, 50])),
   })) };

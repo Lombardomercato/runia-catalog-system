@@ -59,6 +59,7 @@ export type ParsedSupplierSource = {
 export type SupplierProductSnapshot = {
   id: string;
   supplierSku: string;
+  eligibilityStatus: SupplierProductEligibilityStatus;
   nameRaw: string;
   presentationRaw: string | null;
   normalizedName: string;
@@ -121,6 +122,7 @@ export type SupplierListReport = {
   sourceEmissionDate: string | null;
   sourceHttpLastModified: string | null;
   fetchedAt: string;
+  contentFingerprint: string | null;
   rowsTotal: number;
   rowsValid: number;
   rowsInvalid: number;
