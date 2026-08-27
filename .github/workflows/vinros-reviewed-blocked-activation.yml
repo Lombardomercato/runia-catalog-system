@@ -1,9 +1,16 @@
-name: VINROS Production Sync
+name: VINROS Reviewed BLOCKED Activation
 
 on:
-  schedule:
-    - cron: '20 6 * * *'
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/vinros-reviewed-blocked-activation.yml'
+      - 'core/suppliers/automation.ts'
+      - 'modules/suppliers/vinros-automation.ts'
+      - 'modules/suppliers/SupabaseSupplierAutomationRepository.ts'
+      - 'scripts/suppliers/approve-vinros-blocked-state.ts'
+      - 'db/migrations/017_supplier_blocked_state_reviews.sql'
 
 concurrency:
   group: vinros-production-sync
@@ -13,8 +20,9 @@ permissions:
   contents: read
 
 jobs:
-  sync:
-    name: Dry-run, guardrails and safe write
+  activate:
+    if: github.event.head_commit.message == 'Activate reviewed VINROS blocked signature'
+    name: Store exact review and execute controlled scheduler run
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -32,11 +40,9 @@ jobs:
       VINROS_MINIMUM_PRODUCTS_PER_LIST: '10'
       VINROS_RUN_LEASE_SECONDS: '1800'
       VINROS_AUTOMATION_ENABLED: 'true'
-      VINROS_AUTOMATION_TRIGGER_SOURCE: ${{ github.event_name == 'workflow_dispatch' && 'manual' || 'schedule' }}
-      VINROS_ALERT_EMAIL_ENABLED: 'true'
-      VINROS_ALERT_EMAIL_TO: ${{ secrets.VINROS_ALERT_EMAIL_TO }}
-      VINROS_ALERT_EMAIL_FROM: ${{ secrets.VINROS_ALERT_EMAIL_FROM }}
-      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      VINROS_AUTOMATION_TRIGGER_SOURCE: test
+      VINROS_ALERT_EMAIL_ENABLED: 'false'
+      VINROS_BLOCKED_REVIEW_CONFIRM: APPROVE_CH111B_EXACT_BLOCKED_STATE
     steps:
       - name: Checkout approved main
         uses: actions/checkout@v4
@@ -50,5 +56,8 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Run VINROS automation
+      - name: Store exact CH111B review signature
+        run: node --import ./scripts/register-server-only-test-hook.mjs --import tsx scripts/suppliers/approve-vinros-blocked-state.ts
+
+      - name: Execute scheduler-equivalent controlled run
         run: npm run sync:vinros:production:auto

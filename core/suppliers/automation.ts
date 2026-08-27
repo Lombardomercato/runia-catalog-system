@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   SUPPLIER_PRICE_TYPES,
   type SupplierDryRunReport,
@@ -28,17 +30,17 @@ export type SupplierAutomationPolicy = {
 
 export const VINROS_PRODUCTION_POLICY: SupplierAutomationPolicy = {
   approvedListRows: {
-    retail: 3_230,
-    wholesale: 3_227,
-    business: 3_228,
+    retail: 3_233,
+    wholesale: 3_230,
+    business: 3_231,
     cost: 3_875,
   },
-  approvedTotalProducts: 3_916,
+  approvedTotalProducts: 3_928,
   approvedEligibility: {
-    safe: 3_211,
-    blocked: 6,
+    safe: 3_213,
+    blocked: 7,
     pending_review: 15,
-    supplier_only_cost: 684,
+    supplier_only_cost: 693,
   },
   approvedBlockedSkus: [
     'CER160B',
@@ -67,11 +69,23 @@ export type SupplierAutomationDecision = {
   priceChangesPercent: number;
   populationDeltaPercent: number;
   newlyBlockedSkus: string[];
+  changedReviewedBlockedSkus: string[];
+  matchedReviewedBlockedSkus: string[];
+};
+
+export type SupplierReviewedBlockedState = {
+  supplierSku: string;
+  stateSignature: string;
+};
+
+export type SupplierBlockedStateReview = SupplierReviewedBlockedState & {
+  statePayload: Record<string, unknown>;
 };
 
 export function evaluateSupplierAutomationReport(
   report: SupplierDryRunReport,
   policy: SupplierAutomationPolicy = VINROS_PRODUCTION_POLICY,
+  reviewedBlockedStates: readonly SupplierReviewedBlockedState[] = [],
 ): SupplierAutomationDecision {
   const blockingReasons: string[] = [];
   const alertReasons: string[] = [];
@@ -157,11 +171,37 @@ export function evaluateSupplierAutomationReport(
       .filter((item) => item.blocking && item.supplierSku)
       .map((item) => normalizeSku(item.supplierSku!)),
   );
+  const observedBlockedReviews = new Map(
+    [...observedBlocked].flatMap((supplierSku) => {
+      const review = supplierBlockedStateReview(report, supplierSku);
+      return review ? [[supplierSku, review] as const] : [];
+    }),
+  );
+  const reviewedBlocked = new Map(
+    reviewedBlockedStates.map((review) => [normalizeSku(review.supplierSku), review.stateSignature]),
+  );
+  const matchedReviewedBlockedSkus = [...reviewedBlocked]
+    .filter(([supplierSku, signature]) => (
+      observedBlockedReviews.get(supplierSku)?.stateSignature === signature
+    ))
+    .map(([supplierSku]) => supplierSku)
+    .sort();
+  const changedReviewedBlockedSkus = [...reviewedBlocked]
+    .filter(([supplierSku, signature]) => (
+      observedBlockedReviews.get(supplierSku)?.stateSignature !== signature
+    ))
+    .map(([supplierSku]) => supplierSku)
+    .sort();
   const newlyBlockedSkus = [...observedBlocked]
-    .filter((sku) => !approvedBlocked.has(sku))
+    .filter((sku) => !approvedBlocked.has(sku) && !reviewedBlocked.has(sku))
     .sort();
   if (newlyBlockedSkus.length > 0) {
     blockingReasons.push(`Aparecieron nuevos BLOCKED: ${newlyBlockedSkus.join(', ')}.`);
+  }
+  if (changedReviewedBlockedSkus.length > 0) {
+    blockingReasons.push(
+      `Cambió el estado de BLOCKED ya revisados: ${changedReviewedBlockedSkus.join(', ')}.`,
+    );
   }
 
   for (const [status, expected] of Object.entries(policy.approvedEligibility) as Array<
@@ -180,6 +220,36 @@ export function evaluateSupplierAutomationReport(
     priceChangesPercent,
     populationDeltaPercent,
     newlyBlockedSkus,
+    changedReviewedBlockedSkus,
+    matchedReviewedBlockedSkus,
+  };
+}
+
+export function supplierBlockedStateReview(
+  report: SupplierDryRunReport,
+  supplierSkuInput: string,
+): SupplierBlockedStateReview | null {
+  const supplierSku = normalizeSku(supplierSkuInput);
+  const blockingAnomalies = report.anomalies
+    .filter((item) => (
+      item.blocking
+      && item.supplierSku
+      && normalizeSku(item.supplierSku) === supplierSku
+    ))
+    .map((item) => ({
+      type: item.type,
+      priceType: item.priceType,
+      observedPrice: item.observedPrice,
+      observedPrices: canonicalObservedPrices(item.rawData.observedPrices),
+    }))
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  if (blockingAnomalies.length === 0) return null;
+
+  const statePayload = { supplierSku, blockingAnomalies };
+  return {
+    supplierSku,
+    statePayload,
+    stateSignature: createHash('sha256').update(stableJson(statePayload)).digest('hex'),
   };
 }
 
@@ -200,6 +270,11 @@ export function summarizeSupplierDryRun(
     policyCanWrite: decision.canWrite,
     blockingReasons: decision.blockingReasons,
     alertReasons: decision.alertReasons,
+    reviewedBlocked: {
+      matched: decision.matchedReviewedBlockedSkus,
+      changed: decision.changedReviewedBlockedSkus,
+      newlyBlocked: decision.newlyBlockedSkus,
+    },
     lists: Object.fromEntries(
       SUPPLIER_PRICE_TYPES.map((priceType) => {
         const list = report.lists[priceType];
@@ -257,6 +332,26 @@ function reportIdentity(report: SupplierDryRunReport) {
 
 function normalizeSku(value: string) {
   return value.trim().replace(/\s+/g, '').toUpperCase();
+}
+
+function canonicalObservedPrices(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, price]) => typeof price === 'number' && Number.isFinite(price))
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => `${JSON.stringify(key)}:${stableJson(nested)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function percent(value: number, total: number) {

@@ -63,7 +63,14 @@ export class VinrosAutomationRunner {
       const dryResult = await this.dependencies.executeSync({ dryRun: true });
       if (dryResult.mode !== 'dry-run') throw new Error('VINROS_AUTOMATION_EXPECTED_DRY_RUN');
       dryRun = dryResult;
-      decision = evaluateSupplierAutomationReport(dryRun, VINROS_PRODUCTION_POLICY);
+      const reviewedBlockedStates = await this.dependencies.store.loadReviewedBlockedStates(
+        claim.supplierId,
+      );
+      decision = evaluateSupplierAutomationReport(
+        dryRun,
+        VINROS_PRODUCTION_POLICY,
+        reviewedBlockedStates,
+      );
 
       if (!decision.canWrite) {
         const alertRequired = decision.alertReasons.length > 0;
@@ -91,6 +98,7 @@ export class VinrosAutomationRunner {
           const candidateDecision = evaluateSupplierAutomationReport(
             candidate,
             VINROS_PRODUCTION_POLICY,
+            reviewedBlockedStates,
           );
           if (!candidateDecision.canWrite) {
             throw new Error('VINROS_AUTOMATION_WRITE_RECHECK_BLOCKED');
@@ -148,6 +156,8 @@ export class VinrosAutomationRunner {
         priceChangesPercent: 0,
         populationDeltaPercent: 0,
         newlyBlockedSkus: [],
+        changedReviewedBlockedSkus: [],
+        matchedReviewedBlockedSkus: [],
       };
       await this.dependencies.store.finish({
         ...runMetrics(claim.runId, dryRun),

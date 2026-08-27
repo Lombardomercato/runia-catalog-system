@@ -1,5 +1,10 @@
 import 'server-only';
 
+import type {
+  SupplierBlockedStateReview,
+  SupplierReviewedBlockedState,
+} from '@/core/suppliers/automation';
+
 export type SupplierAutomationTrigger = 'schedule' | 'manual' | 'test';
 export type SupplierAutomationFinalStatus =
   | 'completed'
@@ -37,6 +42,12 @@ export interface SupplierAutomationRunStore {
     triggerSource: SupplierAutomationTrigger;
     leaseSeconds: number;
   }): Promise<SupplierAutomationRunClaim>;
+  loadReviewedBlockedStates(supplierId: string): Promise<SupplierReviewedBlockedState[]>;
+  saveReviewedBlockedState(input: {
+    supplierId: string;
+    review: SupplierBlockedStateReview;
+    reviewedBy: string;
+  }): Promise<void>;
   finish(input: SupplierAutomationRunFinish): Promise<void>;
   recordAlert(input: {
     runId: string;
@@ -68,6 +79,38 @@ export class SupabaseSupplierAutomationRunStore implements SupplierAutomationRun
       supplierId: String(result.supplierId),
       activeRunId: result.activeRunId ? String(result.activeRunId) : undefined,
     };
+  }
+
+  async loadReviewedBlockedStates(supplierId: string) {
+    const { supabaseServer } = await import('@/lib/supabaseServer');
+    const { data, error } = await supabaseServer
+      .from('supplier_blocked_state_reviews')
+      .select('supplier_sku,state_signature')
+      .eq('supplier_id', supplierId);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((row) => ({
+      supplierSku: String(row.supplier_sku),
+      stateSignature: String(row.state_signature),
+    }));
+  }
+
+  async saveReviewedBlockedState(input: {
+    supplierId: string;
+    review: SupplierBlockedStateReview;
+    reviewedBy: string;
+  }) {
+    const { supabaseServer } = await import('@/lib/supabaseServer');
+    const { error } = await supabaseServer
+      .from('supplier_blocked_state_reviews')
+      .upsert({
+        supplier_id: input.supplierId,
+        supplier_sku: input.review.supplierSku,
+        state_signature: input.review.stateSignature,
+        state_payload: input.review.statePayload,
+        reviewed_by: input.reviewedBy,
+        reviewed_at: new Date().toISOString(),
+      }, { onConflict: 'supplier_id,supplier_sku' });
+    if (error) throw new Error(error.message);
   }
 
   async finish(input: SupplierAutomationRunFinish) {

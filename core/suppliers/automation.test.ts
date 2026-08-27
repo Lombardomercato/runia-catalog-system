@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import {
   evaluateSupplierAutomationReport,
+  supplierBlockedStateReview,
   supplierReportsMatch,
   VINROS_PRODUCTION_POLICY,
 } from './automation';
@@ -183,6 +184,65 @@ test('nuevos BLOCKED no aprobados bloquean el auto-write', () => {
   assert.deepEqual(decision.newlyBlockedSkus, ['NEW999']);
 });
 
+test('BLOCKED revisado sólo pasa mientras su firma de estado sea idéntica', () => {
+  const report = approvedReport();
+  addBlockedFixture(report, 'CH111B', {
+    retail: 6_091,
+    wholesale: 5_661.95,
+    business: 4_853.05,
+    cost: 6_643.55,
+  });
+  const review = supplierBlockedStateReview(report, 'CH111B');
+  assert.ok(review);
+
+  const matching = evaluateSupplierAutomationReport(report, VINROS_PRODUCTION_POLICY, [review]);
+  assert.equal(matching.canWrite, true);
+  assert.deepEqual(matching.matchedReviewedBlockedSkus, ['CH111B']);
+
+  const changed = structuredClone(report);
+  const anomaly = changed.anomalies.find((item) => item.supplierSku === 'CH111B');
+  assert.ok(anomaly);
+  anomaly.rawData.observedPrices = {
+    ...(anomaly.rawData.observedPrices as Record<string, number>),
+    retail: 6_092,
+  };
+  anomaly.observedPrice = 6_092;
+  const changedDecision = evaluateSupplierAutomationReport(
+    changed,
+    VINROS_PRODUCTION_POLICY,
+    [review],
+  );
+  assert.equal(changedDecision.canWrite, false);
+  assert.deepEqual(changedDecision.changedReviewedBlockedSkus, ['CH111B']);
+});
+
+test('firma BLOCKED ignora metadata transitoria pero detecta un estado resuelto', () => {
+  const report = approvedReport();
+  addBlockedFixture(report, 'CH111B', { retail: 6_091, cost: 6_643.55 });
+  const review = supplierBlockedStateReview(report, 'CH111B');
+  assert.ok(review);
+
+  const transientChange = structuredClone(report);
+  const anomaly = transientChange.anomalies.find((item) => item.supplierSku === 'CH111B');
+  assert.ok(anomaly);
+  anomaly.rawData.rowNumber = 999;
+  anomaly.rawData.fetchedAt = '2099-01-01T00:00:00Z';
+  assert.equal(
+    supplierBlockedStateReview(transientChange, 'CH111B')?.stateSignature,
+    review.stateSignature,
+  );
+
+  const resolved = structuredClone(report);
+  resolved.anomalies = resolved.anomalies.filter((item) => item.supplierSku !== 'CH111B');
+  const decision = evaluateSupplierAutomationReport(
+    resolved,
+    VINROS_PRODUCTION_POLICY,
+    [review],
+  );
+  assert.equal(decision.canWrite, false);
+  assert.deepEqual(decision.changedReviewedBlockedSkus, ['CH111B']);
+});
+
 test('alerta Resend usa idempotencia por run y no expone el token en el payload', async () => {
   let capturedUrl = '';
   let capturedInit: RequestInit | undefined;
@@ -203,11 +263,11 @@ test('alerta Resend usa idempotencia por run y no expone el token en el payload'
     runId: 'automation-run-1',
     status: 'blocked',
     reasons: ['Fuente cost fuera de baseline.'],
-    products: 3_916,
+    products: 3_928,
     pricesChanged: 0,
-    blocked: 6,
+    blocked: 7,
     pendingReview: 15,
-    supplierOnlyCost: 684,
+    supplierOnlyCost: 693,
   });
 
   assert.equal(result.providerMessageId, 'email-provider-id');
@@ -244,6 +304,23 @@ test('la migración de automatización aplica RLS, single-flight y permisos serv
     assert.equal(sql.includes(contract), true, contract);
   }
   assert.equal(sql.includes('security definer'), false);
+});
+
+test('la revisión persistente de BLOCKED está protegida por RLS y unicidad', () => {
+  const sql = readFileSync(
+    'db/migrations/017_supplier_blocked_state_reviews.sql',
+    'utf8',
+  ).toLowerCase();
+  for (const contract of [
+    'supplier_blocked_state_reviews',
+    'unique (supplier_id, supplier_sku)',
+    'enable row level security',
+    'revoke all on table public.supplier_blocked_state_reviews from anon, authenticated',
+    'grant select, insert, update on table public.supplier_blocked_state_reviews to service_role',
+    'char_length(state_signature) = 64',
+  ]) {
+    assert.equal(sql.includes(contract), true, contract);
+  }
 });
 
 test('el scheduler diario es no concurrente, acotado y usa sólo secrets', () => {
@@ -305,13 +382,13 @@ function approvedReport(overrides: {
       }];
     })) as unknown as SupplierDryRunReport['lists'],
     global: {
-      uniqueSkus: 3_916,
+      uniqueSkus: 3_928,
       presentIn4: 3_200,
       presentIn3: 20,
       presentIn2: 12,
-      presentIn1: 684,
+      presentIn1: 693,
       newProducts: 0,
-      existingProducts: 3_916,
+      existingProducts: 3_928,
       missingProducts: 0,
       pricesUnchanged: overrides.pricesUnchanged ?? 13_483,
       pricesChanging: overrides.pricesChanging ?? 0,
@@ -321,10 +398,10 @@ function approvedReport(overrides: {
       inconsistentNames: 0,
       inconsistentPresentations: 0,
       eligibility: {
-        safe: { count: 3_211, percent: 82 },
-        blocked: { count: 6, percent: 0.15 },
+        safe: { count: 3_213, percent: 81.8 },
+        blocked: { count: 7, percent: 0.18 },
         pending_review: { count: 15, percent: 0.38 },
-        supplier_only_cost: { count: 684, percent: 17.47 },
+        supplier_only_cost: { count: 693, percent: 17.64 },
       },
     },
     anomalies: VINROS_PRODUCTION_POLICY.approvedBlockedSkus.map((supplierSku) => ({
@@ -367,6 +444,9 @@ class FakeStore implements SupplierAutomationRunStore {
   finishes: SupplierAutomationRunFinish[] = [];
   alerts: Array<{ status: 'sent' | 'failed' }> = [];
 
+  async loadReviewedBlockedStates() { return []; }
+  async saveReviewedBlockedState() {}
+
   async start() {
     return {
       claimed: this.claimed,
@@ -383,6 +463,25 @@ class FakeStore implements SupplierAutomationRunStore {
   async recordAlert(input: { status: 'sent' | 'failed' }) {
     this.alerts.push(input);
   }
+}
+
+function addBlockedFixture(
+  report: SupplierDryRunReport,
+  supplierSku: string,
+  observedPrices: Record<string, number>,
+) {
+  report.anomalies.push({
+    fingerprint: `blocked-${supplierSku}-cost`,
+    type: 'CROSS_LIST_COST_ABOVE_RETAIL',
+    severity: 'error',
+    blocking: true,
+    message: 'fixture',
+    supplierSku,
+    priceType: 'cost',
+    oldPrice: null,
+    observedPrice: observedPrices.cost ?? null,
+    rawData: { rowNumber: 380, fetchedAt: '2026-08-27T00:00:00Z', observedPrices },
+  });
 }
 
 class FakeAlertSender implements SupplierAutomationAlertSender {
