@@ -1,0 +1,50 @@
+name: VINROS Controlled Approved Write
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/vinros-controlled-approved-write.yml'
+      - 'scripts/suppliers/controlled-vinros-production-write.ts'
+
+concurrency:
+  group: vinros-production-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  write:
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'Run approved VINROS 3928 production write'
+    name: Dry-run, WRITE 1, audit and idempotent WRITE 2
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.RUNIA_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.RUNIA_PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+      VINROS_TENANT_SLUG: lombardo
+      VINROS_LIST_1_URL: ${{ secrets.VINROS_LIST_1_URL }}
+      VINROS_LIST_2_URL: ${{ secrets.VINROS_LIST_2_URL }}
+      VINROS_LIST_3_URL: ${{ secrets.VINROS_LIST_3_URL }}
+      VINROS_LIST_4_URL: ${{ secrets.VINROS_LIST_4_URL }}
+      VINROS_MINIMUM_PRODUCTS_PER_LIST: '10'
+      VINROS_RUN_LEASE_SECONDS: '1800'
+      VINROS_CONTROLLED_WRITE_CONFIRM: WRITE_APPROVED_VINROS_3928_TO_RUNIA_PRODUCTION
+    steps:
+      - name: Checkout approved main
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Execute approved controlled write
+        run: node --import ./scripts/register-server-only-test-hook.mjs --import tsx scripts/suppliers/controlled-vinros-production-write.ts
