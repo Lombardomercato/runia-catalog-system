@@ -6,7 +6,7 @@ declare
   table_name text;
   closed_tables constant text[] := array[
     'tenants', 'categories', 'brands', 'products', 'price_lists',
-    'product_prices', 'product_images', 'customer_accounts', 'orders',
+    'product_prices', 'product_images', 'orders',
     'order_items', 'import_batches', 'import_rows'
   ];
 begin
@@ -34,6 +34,42 @@ begin
       raise exception 'missing closed-surface policies on public.%', table_name;
     end if;
   end loop;
+
+  -- Migration 018 opens only an ownership-scoped, read-only customer surface.
+  if not coalesce((
+    select relrowsecurity and relforcerowsecurity
+    from pg_class
+    where oid = 'public.customer_accounts'::regclass
+  ), false) then
+    raise exception 'RLS/FORCE RLS missing on public.customer_accounts';
+  end if;
+  if not has_table_privilege(
+    'authenticated', 'public.customer_accounts', 'SELECT'
+  ) or has_table_privilege(
+    'authenticated', 'public.customer_accounts', 'INSERT'
+  ) or has_table_privilege(
+    'authenticated', 'public.customer_accounts', 'UPDATE'
+  ) or has_table_privilege(
+    'authenticated', 'public.customer_accounts', 'DELETE'
+  ) then
+    raise exception 'customer_accounts is not authenticated read-only';
+  end if;
+  if has_table_privilege('anon', 'public.customer_accounts', 'SELECT')
+    or has_table_privilege('anon', 'public.customer_accounts', 'INSERT')
+    or has_table_privilege('anon', 'public.customer_accounts', 'UPDATE')
+    or has_table_privilege('anon', 'public.customer_accounts', 'DELETE') then
+    raise exception 'anon can access public.customer_accounts';
+  end if;
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'customer_accounts'
+      and policyname = 'customer_accounts_own_active_select'
+      and cmd = 'SELECT'
+      and 'authenticated' = any(roles)
+  ) then
+    raise exception 'customer_accounts ownership SELECT policy missing';
+  end if;
 
   if not has_table_privilege('service_role', 'public.tenants', 'SELECT') then
     raise exception 'service_role cannot resolve tenants';
