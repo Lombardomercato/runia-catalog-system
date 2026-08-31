@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "test:sdk": "node --import ./scripts/register-server-only-test-hook.mjs --import tsx --test sdk/server/contract.test.ts",
+    "test:mcp": "node --import ./scripts/register-server-only-test-hook.mjs --import tsx --test modules/mcp/*.test.ts",
     "test:setup": "node --import ./scripts/register-server-only-test-hook.mjs --import tsx --test modules/setup/contract.test.ts",
     "test:suppliers": "node --import ./scripts/register-server-only-test-hook.mjs --import tsx --test core/suppliers/*.test.ts",
     "test:suppliers:db": "bash scripts/suppliers/test-db-integration.sh",
@@ -29,12 +30,14 @@
     "test:security": "node --import ./scripts/register-server-only-test-hook.mjs --import tsx --test lib/tenantResolver.test.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0",
     "@supabase/supabase-js": "^2.45.4",
     "dotenv": "^16.4.5",
     "next": "^15.3.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "read-excel-file": "9.3.4"
+    "read-excel-file": "9.3.4",
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "@types/node": "^22.7.4",
